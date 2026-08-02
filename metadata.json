@@ -1,0 +1,8 @@
+{
+  "name": "Remix Jurnal Mengajar Guru SMP",
+  "description": "Aplikasi Jurnal Mengajar Guru SMP, materi, serta Evaluasi Pembelajaran di SMP Negeri 1 Beji, Kab. Pasuruan. ",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

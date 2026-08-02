@@ -1,0 +1,1 @@
+import { renderToString } from 'react-dom/server'; import App from './src/App.tsx'; import React from 'react'; try { console.log('Rendering...'); const html = renderToString(React.createElement(App)); console.log('Render success!'); } catch (e) { console.error('Render failed:', e); }
