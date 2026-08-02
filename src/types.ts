@@ -440,6 +440,7 @@ export interface LivePresentationSession {
   totalSlides: number;
   zoomLevel?: number;
   laserPointer?: { x: number; y: number } | null;
+  scrollPosition?: number;
   presenterNote?: string;
   slideImages?: string[];
   updatedAt?: number;

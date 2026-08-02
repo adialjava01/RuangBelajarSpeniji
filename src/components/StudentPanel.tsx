@@ -138,6 +138,22 @@ export default function StudentPanel({
   const [showLiveSyncModal, setShowLiveSyncModal] = useState(false);
   const [studentFollowSync, setStudentFollowSync] = useState(true);
   const [studentSlideOverride, setStudentSlideOverride] = useState<number | null>(null);
+  const studentLiveScrollRef = useRef<HTMLDivElement | null>(null);
+  const studentModalScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (studentFollowSync && typeof livePresentation?.scrollPosition === 'number') {
+      const scrollPct = livePresentation.scrollPosition;
+      [studentLiveScrollRef.current, studentModalScrollRef.current].forEach(el => {
+        if (el) {
+          const maxScroll = el.scrollHeight - el.clientHeight;
+          if (maxScroll > 0) {
+            el.scrollTop = (scrollPct / 100) * maxScroll;
+          }
+        }
+      });
+    }
+  }, [livePresentation?.scrollPosition, studentFollowSync, livePresentation?.currentSlide]);
 
   useEffect(() => {
     if (livePresentation && livePresentation.active) {
@@ -808,39 +824,59 @@ export default function StudentPanel({
                   if (fId) embedUrl = `https://drive.google.com/file/d/${fId}/preview`;
                 } else if (currentUrl.includes('docs.google.com/presentation/d/')) {
                   const sId = currentUrl.split('/d/')[1]?.split('/')[0];
-                  if (sId) embedUrl = `https://docs.google.com/presentation/d/${sId}/embed?start=false&loop=false&delayms=3000`;
+                  if (sId) embedUrl = `https://docs.google.com/presentation/d/${sId}/embed?start=false&loop=false&delayms=3000#slide=${activeSlide}`;
                 } else if (currentUrl.includes('docs.google.com/document/d/')) {
                   const dId = currentUrl.split('/d/')[1]?.split('/')[0];
                   if (dId) embedUrl = `https://docs.google.com/document/d/${dId}/pub?embedded=true`;
                 } else if (currentUrl.toLowerCase().endsWith('.pdf') || currentUrl.toLowerCase().includes('.pdf?')) {
-                  embedUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(currentUrl)}&embedded=true`;
+                  embedUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(currentUrl)}&embedded=true#page=${activeSlide}`;
                 }
                 const isImg = /\.(png|jpe?g|gif|svg|webp)(\?.*)?$/i.test(currentUrl) || currentUrl.startsWith('data:image/');
 
+                // Split text content into paragraphs/slides if available
+                const contentParagraphs = mat?.content ? mat.content.split(/\n\n|---/).filter(p => p.trim()) : [];
+                const activeContentChunk = contentParagraphs.length > 0 
+                  ? (contentParagraphs[Math.min(activeSlide - 1, contentParagraphs.length - 1)] || mat?.content)
+                  : mat?.content;
+
+                const displayTotal = Math.max(livePresentation.totalSlides || 10, contentParagraphs.length || 10);
+
                 return (
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative flex flex-col items-center justify-center text-center space-y-4 shadow-2xl min-h-[500px]">
+                  <div 
+                    ref={studentLiveScrollRef}
+                    className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 relative flex flex-col items-center justify-start text-center space-y-4 shadow-2xl min-h-[500px] overflow-y-auto max-h-[75vh]"
+                  >
+                    {/* Laser Pointer overlay from Teacher */}
                     {livePresentation.laserPointer && studentFollowSync && (
                       <div
-                        className="absolute w-6 h-6 rounded-full bg-red-500/80 border-2 border-white shadow-lg pointer-events-none z-30 animate-ping"
+                        className="absolute pointer-events-none z-50 transition-all duration-75 ease-out"
                         style={{
                           left: `${livePresentation.laserPointer.x}%`,
                           top: `${livePresentation.laserPointer.y}%`,
                           transform: 'translate(-50%, -50%)'
                         }}
-                      />
+                      >
+                        <div className="relative flex items-center justify-center">
+                          <span className="absolute w-8 h-8 rounded-full bg-red-500/60 animate-ping" />
+                          <span className="w-5 h-5 rounded-full bg-red-600 border-2 border-white shadow-[0_0_15px_rgba(239,68,68,1)] flex items-center justify-center" />
+                          <span className="absolute left-6 whitespace-nowrap bg-red-600/90 text-white text-[10px] font-black px-2 py-0.5 rounded-md shadow-lg border border-red-400">
+                            🔴 Laser Guru: {livePresentation.teacherName}
+                          </span>
+                        </div>
+                      </div>
                     )}
 
-                    <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700 shrink-0">
                       <Tv className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>TAYANG PADA KOMPUTER SISWA • SLIDE {activeSlide} DARI {livePresentation.totalSlides}</span>
+                      <span>TAYANG REAL-TIME • SLIDE {activeSlide} DARI {displayTotal}</span>
                     </div>
 
-                    <h3 className="text-2xl font-black text-white max-w-2xl">
+                    <h3 className="text-xl sm:text-2xl font-black text-white max-w-2xl shrink-0">
                       {mat?.title || livePresentation.materialTitle}
                     </h3>
 
                     {embedUrl ? (
-                      <div className="w-full h-[60vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2">
+                      <div className="w-full h-[60vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2 shrink-0">
                         <iframe
                           src={embedUrl}
                           className="w-full h-full border-0"
@@ -850,12 +886,18 @@ export default function StudentPanel({
                         />
                       </div>
                     ) : isImg ? (
-                      <div className="max-w-3xl max-h-[60vh] overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2">
+                      <div className="max-w-3xl max-h-[60vh] overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2 shrink-0">
                         <img src={currentUrl} alt="Slide Media" className="max-h-[55vh] object-contain mx-auto" />
                       </div>
                     ) : mat?.content ? (
-                      <div className="text-sm text-slate-200 max-w-3xl leading-relaxed text-left bg-slate-800/80 p-6 rounded-2xl border border-slate-700/80 shadow-inner overflow-y-auto max-h-[55vh]">
-                        {mat.content}
+                      <div className="w-full max-w-3xl text-sm text-slate-200 leading-relaxed text-left bg-slate-800/90 p-6 rounded-2xl border border-slate-700/80 shadow-inner space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-700/60 pb-2 mb-2 text-xs text-amber-300 font-extrabold">
+                          <span>📌 Bagian Slide / Paragraf {activeSlide}</span>
+                          <span className="text-[10px] bg-amber-950/80 text-amber-200 px-2 py-0.5 rounded border border-amber-800/60">Disinkronkan Guru</span>
+                        </div>
+                        <p className="whitespace-pre-line text-slate-100 text-base leading-relaxed">
+                          {activeContentChunk}
+                        </p>
                       </div>
                     ) : (
                       <div className="p-8 bg-slate-800/50 rounded-2xl border border-slate-700 text-slate-300 max-w-lg space-y-3">
@@ -2875,7 +2917,7 @@ export default function StudentPanel({
             </div>
 
             {/* Presentation Canvas View */}
-            <div className="flex-1 bg-slate-950 p-4 relative flex flex-col items-center justify-center overflow-hidden">
+            <div className="flex-1 bg-slate-950 p-2 sm:p-4 relative flex flex-col items-center justify-center overflow-hidden">
               {(() => {
                 const activeSlide = studentFollowSync ? livePresentation.currentSlide : (studentSlideOverride || livePresentation.currentSlide);
                 const mat = materials.find(m => m.id === livePresentation.materialId);
@@ -2891,41 +2933,60 @@ export default function StudentPanel({
                   if (fId) embedUrl = `https://drive.google.com/file/d/${fId}/preview`;
                 } else if (currentUrl.includes('docs.google.com/presentation/d/')) {
                   const sId = currentUrl.split('/d/')[1]?.split('/')[0];
-                  if (sId) embedUrl = `https://docs.google.com/presentation/d/${sId}/embed?start=false&loop=false&delayms=3000`;
+                  if (sId) embedUrl = `https://docs.google.com/presentation/d/${sId}/embed?start=false&loop=false&delayms=3000#slide=${activeSlide}`;
                 } else if (currentUrl.includes('docs.google.com/document/d/')) {
                   const dId = currentUrl.split('/d/')[1]?.split('/')[0];
                   if (dId) embedUrl = `https://docs.google.com/document/d/${dId}/pub?embedded=true`;
                 } else if (currentUrl.toLowerCase().endsWith('.pdf') || currentUrl.toLowerCase().includes('.pdf?')) {
-                  embedUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(currentUrl)}&embedded=true`;
+                  embedUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(currentUrl)}&embedded=true#page=${activeSlide}`;
                 }
                 const isImg = /\.(png|jpe?g|gif|svg|webp)(\?.*)?$/i.test(currentUrl) || currentUrl.startsWith('data:image/');
 
+                // Split text content into paragraphs/slides if available
+                const contentParagraphs = mat?.content ? mat.content.split(/\n\n|---/).filter(p => p.trim()) : [];
+                const activeContentChunk = contentParagraphs.length > 0 
+                  ? (contentParagraphs[Math.min(activeSlide - 1, contentParagraphs.length - 1)] || mat?.content)
+                  : mat?.content;
+
+                const displayTotal = Math.max(livePresentation.totalSlides || 10, contentParagraphs.length || 10);
+
                 return (
                   <div className="w-full h-full relative flex items-center justify-center">
-                    {/* Laser Pointer overlay from Teacher */}
-                    {livePresentation.laserPointer && studentFollowSync && (
-                      <div
-                        className="absolute w-6 h-6 rounded-full bg-red-500/80 border-2 border-white shadow-lg pointer-events-none z-30 animate-ping"
-                        style={{
-                          left: `${livePresentation.laserPointer.x}%`,
-                          top: `${livePresentation.laserPointer.y}%`,
-                          transform: 'translate(-50%, -50%)'
-                        }}
-                      />
-                    )}
+                    <div 
+                      ref={studentModalScrollRef}
+                      className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-start text-center space-y-4 shadow-2xl overflow-y-auto relative"
+                    >
+                      {/* Laser Pointer overlay from Teacher */}
+                      {livePresentation.laserPointer && studentFollowSync && (
+                        <div
+                          className="absolute pointer-events-none z-50 transition-all duration-75 ease-out"
+                          style={{
+                            left: `${livePresentation.laserPointer.x}%`,
+                            top: `${livePresentation.laserPointer.y}%`,
+                            transform: 'translate(-50%, -50%)'
+                          }}
+                        >
+                          <div className="relative flex items-center justify-center">
+                            <span className="absolute w-8 h-8 rounded-full bg-red-500/60 animate-ping" />
+                            <span className="w-5 h-5 rounded-full bg-red-600 border-2 border-white shadow-[0_0_15px_rgba(239,68,68,1)] flex items-center justify-center" />
+                            <span className="absolute left-6 whitespace-nowrap bg-red-600/90 text-white text-[10px] font-black px-2 py-0.5 rounded-md shadow-lg border border-red-400">
+                              🔴 Laser Guru: {livePresentation.teacherName}
+                            </span>
+                          </div>
+                        </div>
+                      )}
 
-                    <div className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-center text-center space-y-3 shadow-2xl overflow-y-auto">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700">
+                      <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700 shrink-0">
                         <Tv className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>SLIDE {activeSlide} DARI {livePresentation.totalSlides}</span>
+                        <span>SIARAN LIVE LAB • SLIDE {activeSlide} DARI {displayTotal}</span>
                       </div>
 
-                      <h2 className="text-xl sm:text-2xl font-black text-white max-w-2xl">
+                      <h2 className="text-xl sm:text-2xl font-black text-white max-w-2xl shrink-0">
                         {mat?.title || livePresentation.materialTitle}
                       </h2>
 
                       {embedUrl ? (
-                        <div className="w-full h-[55vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2">
+                        <div className="w-full h-[55vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2 shrink-0">
                           <iframe
                             src={embedUrl}
                             className="w-full h-full border-0"
@@ -2935,12 +2996,18 @@ export default function StudentPanel({
                           />
                         </div>
                       ) : isImg ? (
-                        <div className="max-w-3xl max-h-[55vh] overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2">
+                        <div className="max-w-3xl max-h-[55vh] overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2 shrink-0">
                           <img src={currentUrl} alt="Slide Media" className="max-h-[50vh] object-contain mx-auto" />
                         </div>
                       ) : mat?.content ? (
-                        <div className="text-sm text-slate-200 max-w-3xl leading-relaxed text-left bg-slate-800/80 p-6 rounded-2xl border border-slate-700/80 shadow-inner overflow-y-auto max-h-[50vh]">
-                          {mat.content}
+                        <div className="w-full max-w-3xl text-sm text-slate-200 leading-relaxed text-left bg-slate-800/90 p-6 rounded-2xl border border-slate-700/80 shadow-inner space-y-4">
+                          <div className="flex items-center justify-between border-b border-slate-700/60 pb-2 mb-2 text-xs text-amber-300 font-extrabold">
+                            <span>📌 Bagian Slide / Paragraf {activeSlide}</span>
+                            <span className="text-[10px] bg-amber-950/80 text-amber-200 px-2 py-0.5 rounded border border-amber-800/60">Disinkronkan Guru</span>
+                          </div>
+                          <p className="whitespace-pre-line text-slate-100 text-base leading-relaxed">
+                            {activeContentChunk}
+                          </p>
                         </div>
                       ) : (
                         <div className="p-6 bg-slate-800/50 rounded-2xl border border-slate-700 text-slate-300 max-w-lg space-y-3">

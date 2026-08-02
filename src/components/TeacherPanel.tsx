@@ -1,5 +1,5 @@
 import toast from 'react-hot-toast';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import ReactQuill from 'react-quill-new';
@@ -249,6 +249,8 @@ export default function TeacherPanel({
   const [activeLiveMaterial, setActiveLiveMaterial] = useState<Material | null>(null);
   const [liveSlideNum, setLiveSlideNum] = useState<number>(1);
   const [liveLaserPointer, setLiveLaserPointer] = useState<{ x: number; y: number } | null>(null);
+  const lastLaserSyncRef = useRef<number>(0);
+  const teacherContentRef = useRef<HTMLDivElement | null>(null);
 
   // --- 0. IDENTITAS SEKOLAH & KEPALA SEKOLAH STATE ---
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentityConfig>(() => {
@@ -8608,48 +8610,10 @@ export default function TeacherPanel({
               </div>
             </div>
 
-            {/* Presentation Interactive Canvas with Pointer Tracking */}
+            {/* Presentation Interactive Canvas with Pointer & Scroll Tracking */}
             <div 
-              className="flex-1 bg-slate-950 p-4 relative flex flex-col items-center justify-center overflow-hidden cursor-crosshair group"
-              onMouseMove={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
-                const y = Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100));
-                setLiveLaserPointer({ x, y });
-
-                if (onUpdateLivePresentation && (activeLiveMaterial || livePresentation)) {
-                  const currentMatTitle = activeLiveMaterial?.title || livePresentation?.materialTitle || '';
-                  const currentMatId = activeLiveMaterial?.id || livePresentation?.materialId || '';
-                  const currentTotal = livePresentation?.totalSlides || 10;
-                  const currentSlideIndex = liveSlideNum;
-
-                  onUpdateLivePresentation({
-                    id: 'active_session',
-                    materialId: currentMatId,
-                    materialTitle: currentMatTitle,
-                    teacherId: currentTeacher.id,
-                    teacherName: currentTeacher.name,
-                    currentSlide: currentSlideIndex,
-                    totalSlides: currentTotal,
-                    laserPointer: { x, y },
-                    active: true,
-                    startedAt: livePresentation?.startedAt || new Date().toISOString()
-                  });
-                }
-              }}
+              className="flex-1 bg-slate-950 p-2 sm:p-4 relative flex flex-col items-center justify-center overflow-hidden cursor-crosshair group"
             >
-              {/* Laser Pointer Visualization */}
-              {liveLaserPointer && (
-                <div
-                  className="absolute w-7 h-7 rounded-full bg-red-500/80 border-2 border-white shadow-xl pointer-events-none z-30 animate-pulse"
-                  style={{
-                    left: `${liveLaserPointer.x}%`,
-                    top: `${liveLaserPointer.y}%`,
-                    transform: 'translate(-50%, -50%)'
-                  }}
-                />
-              )}
-
               {(() => {
                 const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
                 const currentUrl = currentMat?.fileUrl || '';
@@ -8664,28 +8628,96 @@ export default function TeacherPanel({
                   if (fId) embedUrl = `https://drive.google.com/file/d/${fId}/preview`;
                 } else if (currentUrl.includes('docs.google.com/presentation/d/')) {
                   const sId = currentUrl.split('/d/')[1]?.split('/')[0];
-                  if (sId) embedUrl = `https://docs.google.com/presentation/d/${sId}/embed?start=false&loop=false&delayms=3000`;
+                  if (sId) embedUrl = `https://docs.google.com/presentation/d/${sId}/embed?start=false&loop=false&delayms=3000#slide=${liveSlideNum}`;
                 } else if (currentUrl.includes('docs.google.com/document/d/')) {
                   const dId = currentUrl.split('/d/')[1]?.split('/')[0];
                   if (dId) embedUrl = `https://docs.google.com/document/d/${dId}/pub?embedded=true`;
                 } else if (currentUrl.toLowerCase().endsWith('.pdf') || currentUrl.toLowerCase().includes('.pdf?')) {
-                  embedUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(currentUrl)}&embedded=true`;
+                  embedUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(currentUrl)}&embedded=true#page=${liveSlideNum}`;
                 }
                 const isImg = /\.(png|jpe?g|gif|svg|webp)(\?.*)?$/i.test(currentUrl) || currentUrl.startsWith('data:image/');
 
+                // Split text content into paragraphs/slides if available
+                const contentParagraphs = currentMat?.content ? currentMat.content.split(/\n\n|---/).filter(p => p.trim()) : [];
+                const activeContentChunk = contentParagraphs.length > 0 
+                  ? (contentParagraphs[Math.min(liveSlideNum - 1, contentParagraphs.length - 1)] || currentMat?.content)
+                  : currentMat?.content;
+
+                const handlePointerAndScrollUpdate = (xPct: number, yPct: number, scrollPct?: number) => {
+                  setLiveLaserPointer({ x: xPct, y: yPct });
+                  const now = Date.now();
+                  if (now - lastLaserSyncRef.current > 75 && onUpdateLivePresentation) {
+                    lastLaserSyncRef.current = now;
+                    const currentMatTitle = activeLiveMaterial?.title || livePresentation?.materialTitle || '';
+                    const currentMatId = activeLiveMaterial?.id || livePresentation?.materialId || '';
+                    const currentTotal = Math.max(livePresentation?.totalSlides || 10, contentParagraphs.length || 10);
+
+                    onUpdateLivePresentation({
+                      id: 'active_session',
+                      materialId: currentMatId,
+                      materialTitle: currentMatTitle,
+                      teacherId: currentTeacher.id,
+                      teacherName: currentTeacher.name,
+                      currentSlide: liveSlideNum,
+                      totalSlides: currentTotal,
+                      laserPointer: { x: xPct, y: yPct },
+                      scrollPosition: scrollPct !== undefined ? scrollPct : (livePresentation?.scrollPosition || 0),
+                      active: true,
+                      startedAt: livePresentation?.startedAt || new Date().toISOString()
+                    });
+                  }
+                };
+
                 return (
-                  <div className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-center text-center space-y-3 shadow-2xl relative overflow-y-auto">
-                    <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700">
+                  <div 
+                    ref={teacherContentRef}
+                    onMouseMove={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const x = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+                      const y = Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100));
+                      handlePointerAndScrollUpdate(x, y);
+                    }}
+                    onScroll={(e) => {
+                      const target = e.currentTarget;
+                      const maxScroll = target.scrollHeight - target.clientHeight;
+                      const pct = maxScroll > 0 ? Math.round((target.scrollTop / maxScroll) * 100) : 0;
+                      if (liveLaserPointer) {
+                        handlePointerAndScrollUpdate(liveLaserPointer.x, liveLaserPointer.y, pct);
+                      }
+                    }}
+                    className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-start text-center space-y-4 shadow-2xl relative overflow-y-auto"
+                  >
+                    {/* Laser Pointer Visual on Teacher Screen */}
+                    {liveLaserPointer && (
+                      <div
+                        className="absolute pointer-events-none z-50 transition-all duration-75 ease-out"
+                        style={{
+                          left: `${liveLaserPointer.x}%`,
+                          top: `${liveLaserPointer.y}%`,
+                          transform: 'translate(-50%, -50%)'
+                        }}
+                      >
+                        <div className="relative flex items-center justify-center">
+                          <span className="absolute w-8 h-8 rounded-full bg-red-500/50 animate-ping" />
+                          <span className="w-5 h-5 rounded-full bg-red-600 border-2 border-white shadow-[0_0_15px_rgba(239,68,68,1)] flex items-center justify-center" />
+                          <span className="absolute left-6 whitespace-nowrap bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded shadow-md border border-red-400">
+                            🔴 Laser Guru
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700 shrink-0">
                       <Tv className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>TAYANG PADA KOMPUTER SISWA • SLIDE {liveSlideNum} DARIPADA {livePresentation?.totalSlides || 10}</span>
+                      <span>MODE LAB AKTIFF • SLIDE {liveSlideNum} DARI {Math.max(livePresentation?.totalSlides || 10, contentParagraphs.length || 10)}</span>
                     </div>
 
-                    <h2 className="text-xl sm:text-2xl font-black text-white max-w-2xl">
+                    <h2 className="text-xl sm:text-2xl font-black text-white max-w-2xl shrink-0">
                       {currentMat?.title || activeLiveMaterial?.title || livePresentation?.materialTitle}
                     </h2>
 
                     {embedUrl ? (
-                      <div className="w-full h-[55vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2">
+                      <div className="w-full h-[55vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2 shrink-0">
                         <iframe
                           src={embedUrl}
                           className="w-full h-full border-0"
@@ -8695,12 +8727,18 @@ export default function TeacherPanel({
                         />
                       </div>
                     ) : isImg ? (
-                      <div className="max-w-3xl max-h-[55vh] overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2">
+                      <div className="max-w-3xl max-h-[55vh] overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2 shrink-0">
                         <img src={currentUrl} alt="Slide Media" className="max-h-[50vh] object-contain mx-auto" />
                       </div>
                     ) : currentMat?.content ? (
-                      <div className="text-sm text-slate-200 max-w-3xl leading-relaxed text-left bg-slate-800/80 p-6 rounded-2xl border border-slate-700/80 shadow-inner overflow-y-auto max-h-[50vh]">
-                        {currentMat.content}
+                      <div className="w-full max-w-3xl text-sm text-slate-200 leading-relaxed text-left bg-slate-800/90 p-6 rounded-2xl border border-slate-700/80 shadow-inner space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-700/60 pb-2 mb-2 text-xs text-amber-300 font-extrabold">
+                          <span>📌 Bagian Slide / Paragraf {liveSlideNum}</span>
+                          <span className="text-[10px] bg-amber-950/80 text-amber-200 px-2 py-0.5 rounded border border-amber-800/60">Tersambung Real-time ke Layar Siswa</span>
+                        </div>
+                        <p className="whitespace-pre-line text-slate-100 text-base leading-relaxed">
+                          {activeContentChunk}
+                        </p>
                       </div>
                     ) : (
                       <div className="p-6 bg-slate-800/50 rounded-2xl border border-slate-700 text-slate-300 max-w-lg space-y-3">
