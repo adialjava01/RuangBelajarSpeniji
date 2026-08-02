@@ -6,7 +6,7 @@ import {
 import { 
   BookOpen, FileText, Key, Clock, AlertTriangle, CheckCircle, ShieldAlert, Sparkles, Send, User, GraduationCap,
   Bell, Megaphone, CheckCircle2, Info, X
-, Heart, MessageSquare, Users, Briefcase, Folder, ExternalLink, Upload, FolderPlus, Tv, Radio, Eye, Download, Maximize2, Minimize2, ZoomIn, ZoomOut, Lock, Unlock, Paperclip, FileCheck, Play, Volume2, Image as ImageIcon, Link as LinkIcon, File } from 'lucide-react';
+, Heart, MessageSquare, Users, Briefcase, Folder, ExternalLink, Upload, FolderPlus, Tv, Radio, Eye, Download, Maximize2, Minimize2, ZoomIn, ZoomOut, Lock, Unlock, Paperclip, FileCheck, Play, Volume2, Image as ImageIcon, Link as LinkIcon, File, RotateCw, Smartphone } from 'lucide-react';
 
 interface StudentPanelProps {
   dailyCheckIns?: DailyCheckIn[];
@@ -138,9 +138,44 @@ export default function StudentPanel({
   const [showLiveSyncModal, setShowLiveSyncModal] = useState(false);
   const [studentFollowSync, setStudentFollowSync] = useState(true);
   const [studentSlideOverride, setStudentSlideOverride] = useState<number | null>(null);
+  const [forceRotate90, setForceRotate90] = useState(false);
+  const [isMobileFullscreen, setIsMobileFullscreen] = useState(false);
   const studentLiveScrollRef = useRef<HTMLDivElement | null>(null);
   const studentModalScrollRef = useRef<HTMLDivElement | null>(null);
   const lastSlideRef = useRef<number | null>(null);
+
+  const handleToggleFullscreenLandscape = async () => {
+    try {
+      if (!isMobileFullscreen && !document.fullscreenElement) {
+        const docEl = document.documentElement;
+        if (docEl.requestFullscreen) {
+          await docEl.requestFullscreen();
+        } else if ((docEl as any).webkitRequestFullscreen) {
+          await (docEl as any).webkitRequestFullscreen();
+        }
+        if (window.screen?.orientation && (window.screen.orientation as any).lock) {
+          await (window.screen.orientation as any).lock('landscape').catch(() => {});
+        }
+        setIsMobileFullscreen(true);
+        toast.success('Mode Landscape Fullscreen Diaktifkan. Miringkan HP Anda!');
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen().catch(() => {});
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen().catch(() => {});
+        }
+        if (window.screen?.orientation && (window.screen.orientation as any).unlock) {
+          (window.screen.orientation as any).unlock();
+        }
+        setIsMobileFullscreen(false);
+        setForceRotate90(false);
+        toast.success('Kembali ke tampilan normal.');
+      }
+    } catch (err) {
+      setForceRotate90(prev => !prev);
+      toast.success(!forceRotate90 ? 'Layar Diputar 90° (Mode Tidur/Landscape HP)' : 'Layar Normal');
+    }
+  };
 
   // Auto-Reset Scroll to Top whenever the teacher changes the current slide
   useEffect(() => {
@@ -876,29 +911,53 @@ export default function StudentPanel({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setForceRotate90(!forceRotate90)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      forceRotate90
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-black animate-pulse'
+                        : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700'
+                    }`}
+                    title="Rotasi Layar 90° jika HP terkunci di mode berdiri (portrait)"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    <span>{forceRotate90 ? 'Layar 90° On' : '🔄 Rotasi 90° HP'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleFullscreenLandscape}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                    title="Buka Mode Fullscreen & Rotasi Landscape HP"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-cyan-300" />
+                    <span>Mode Tidur (Landscape)</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {
                       setStudentFollowSync(!studentFollowSync);
                       if (!studentFollowSync) setStudentSlideOverride(null);
                     }}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                       studentFollowSync
                         ? 'bg-emerald-600 text-white shadow-md'
                         : 'bg-slate-800 text-slate-300 border border-slate-700'
                     }`}
                   >
-                    {studentFollowSync ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                    {studentFollowSync ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
                     <span>{studentFollowSync ? 'Sync Otomatis Terkunci' : 'Sync Dilepas (Bebas)'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setShowLiveSyncModal(true)}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-extrabold shadow-md transition flex items-center gap-2 cursor-pointer"
+                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-extrabold shadow-md transition flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Tv className="w-4 h-4" />
+                    <Tv className="w-3.5 h-3.5" />
                     <span>Layar Penuh Modal</span>
                   </button>
                 </div>
@@ -2969,50 +3028,107 @@ export default function StudentPanel({
 
       {/* MODAL STUDENT LIVE PRESENTATION SYNCHRONIZED VIEWER */}
       {((showLiveSyncModal || livePresentation?.active) && livePresentation && livePresentation.active) && (
-        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 z-[99999] animate-fade-in">
-          <div className="bg-slate-900 text-white rounded-3xl shadow-2xl border border-slate-800 w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden">
+        <div className={`fixed inset-0 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-0 sm:p-4 z-[99999] animate-fade-in ${forceRotate90 ? 'overflow-hidden' : ''}`}>
+          <div 
+            style={forceRotate90 ? {
+              transform: 'rotate(90deg)',
+              transformOrigin: 'center center',
+              width: '100vh',
+              height: '100vw',
+              position: 'fixed',
+              top: 'calc(50% - 50vw)',
+              left: 'calc(50% - 50vh)',
+              zIndex: 99999,
+              backgroundColor: '#020617'
+            } : {}}
+            className={`bg-slate-900 text-white shadow-2xl border-slate-800 w-full flex flex-col overflow-hidden transition-all duration-200 ${
+              forceRotate90
+                ? 'rounded-none border-0'
+                : 'max-w-5xl h-[96vh] sm:h-[92vh] rounded-2xl sm:rounded-3xl border landscape:max-w-full landscape:h-full landscape:rounded-none landscape:border-0'
+            }`}
+          >
+            {/* Top Notification Badge for Mobile Phone Portrait Users */}
+            <div className="bg-amber-950/90 border-b border-amber-800/80 px-3 py-1.5 flex items-center justify-between text-[11px] text-amber-200 font-bold shrink-0 sm:hidden">
+              <div className="flex items-center gap-1.5 truncate">
+                <RotateCw className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="truncate">💡 Miringkan HP atau tekan tombol Rotasi 90° jika posisi HP berdiri</span>
+              </div>
+              <button 
+                onClick={() => setForceRotate90(!forceRotate90)}
+                className="px-2 py-0.5 bg-amber-500 text-slate-950 rounded font-black text-[10px] shrink-0 ml-1 cursor-pointer"
+              >
+                {forceRotate90 ? 'Layar Normal' : 'Rotasi Now'}
+              </button>
+            </div>
+
             {/* Header */}
-            <div className="bg-slate-950 p-4 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-red-600 text-white flex items-center justify-center font-black animate-pulse shadow-md">
-                  <Radio className="w-5 h-5" />
+            <div className="bg-slate-950 p-3 sm:p-4 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0 flex-wrap sm:flex-nowrap">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-red-600 text-white flex items-center justify-center font-black animate-pulse shadow-md shrink-0">
+                  <Radio className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 bg-red-600/30 text-red-400 border border-red-500/40 text-[10px] font-black rounded-full uppercase tracking-wider">
-                      LIVE LAB KOMPUTER
+                    <span className="px-2 py-0.5 bg-red-600/30 text-red-400 border border-red-500/40 text-[9px] sm:text-[10px] font-black rounded-full uppercase tracking-wider shrink-0">
+                      LIVE LAB
                     </span>
-                    <span className="text-xs text-slate-300 font-bold">
+                    <span className="text-[11px] sm:text-xs text-slate-300 font-bold truncate">
                       Guru: {livePresentation.teacherName}
                     </span>
                   </div>
-                  <h3 className="font-black text-sm sm:text-base text-white mt-0.5">
+                  <h3 className="font-black text-xs sm:text-base text-white mt-0.5 truncate max-w-[200px] sm:max-w-md">
                     {livePresentation.materialTitle}
                   </h3>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+                <button
+                  type="button"
+                  onClick={() => setForceRotate90(!forceRotate90)}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                    forceRotate90
+                      ? 'bg-amber-500 text-slate-950 shadow-md font-black animate-pulse'
+                      : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700'
+                  }`}
+                  title="Putar slide 90 derajat jika HP dalam posisi berdiri (portrait)"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>{forceRotate90 ? '90° On' : '🔄 Rotasi 90°'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleToggleFullscreenLandscape}
+                  className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                  title="Mode Tidur (Landscape Fullscreen)"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-cyan-300" />
+                  <span className="hidden sm:inline">Mode Tidur (Landscape)</span>
+                  <span className="sm:hidden">Landscape</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
                     setStudentFollowSync(!studentFollowSync);
                     if (!studentFollowSync) setStudentSlideOverride(null);
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
                     studentFollowSync
                       ? 'bg-emerald-600 text-white shadow-xs'
                       : 'bg-slate-800 text-slate-300 border border-slate-700'
                   }`}
                 >
                   {studentFollowSync ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                  <span>{studentFollowSync ? 'Sync Otomatis Terkunci' : 'Sync Dilepas (Bebas)'}</span>
+                  <span className="hidden sm:inline">{studentFollowSync ? 'Sync Otomatis Terkunci' : 'Sync Dilepas'}</span>
+                  <span className="sm:hidden">{studentFollowSync ? 'Sync On' : 'Bebas'}</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setShowLiveSyncModal(false)}
-                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition cursor-pointer"
+                  className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -3057,7 +3173,7 @@ export default function StudentPanel({
                   <div className="w-full h-full relative flex items-center justify-center">
                     <div 
                       ref={studentModalScrollRef}
-                      className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-start text-center space-y-4 shadow-2xl overflow-y-auto relative scroll-smooth"
+                      className="w-full h-full bg-slate-900 border border-slate-800 rounded-xl sm:rounded-2xl p-2 sm:p-6 flex flex-col items-center justify-start text-center space-y-3 sm:space-y-4 shadow-2xl overflow-y-auto relative scroll-smooth"
                     >
                       {/* Laser Pointer overlay from Teacher */}
                       {livePresentation.laserPointer && studentFollowSync && (
@@ -3079,7 +3195,7 @@ export default function StudentPanel({
                         </div>
                       )}
 
-                      <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700 shrink-0">
+                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700 shrink-0">
                         <Tv className="w-3.5 h-3.5 text-emerald-400" />
                         <span>SIARAN LIVE LAB • SLIDE {activeSlide}/{displayTotal}</span>
                         {studentFollowSync && typeof livePresentation?.scrollPosition === 'number' && (
@@ -3090,24 +3206,24 @@ export default function StudentPanel({
                         )}
                       </div>
 
-                      <h2 className="text-xl sm:text-2xl font-black text-white max-w-2xl shrink-0">
+                      <h2 className="text-lg sm:text-2xl font-black text-white max-w-2xl shrink-0">
                         {mat?.title || livePresentation.materialTitle}
                       </h2>
 
                       {embedUrl ? (
-                        <div className="w-full h-[55vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2 shrink-0">
+                        <div className="w-full h-[65vh] landscape:h-[82vh] sm:h-[58vh] max-w-5xl rounded-xl sm:rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-1 shrink-0 flex-1 min-h-[220px]">
                           <iframe
                             key={`student_modal_embed_${embedUrl}_${activeSlide}`}
                             src={embedUrl}
-                            className="w-full h-full border-0"
+                            className="w-full h-full border-0 object-contain"
                             allow="autoplay; encrypted-media; picture-in-picture"
                             allowFullScreen
                             title="Media Presentasi Siswa"
                           />
                         </div>
                       ) : isImg ? (
-                        <div className="max-w-3xl max-h-[55vh] overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2 shrink-0">
-                          <img src={currentUrl} alt="Slide Media" className="max-h-[50vh] object-contain mx-auto" />
+                        <div className="max-w-4xl max-h-[65vh] landscape:max-h-[82vh] sm:max-h-[58vh] overflow-hidden rounded-xl sm:rounded-2xl border border-slate-700 shadow-2xl my-1 shrink-0 flex-1 flex items-center justify-center">
+                          <img src={currentUrl} alt="Slide Media" className="max-h-[60vh] landscape:max-h-[80vh] sm:max-h-[50vh] object-contain mx-auto" />
                         </div>
                       ) : mat?.content ? (
                         <div className="w-full max-w-3xl text-sm text-slate-200 leading-relaxed text-left bg-slate-800/90 p-6 rounded-2xl border border-slate-700/80 shadow-inner space-y-4">
