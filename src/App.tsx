@@ -296,6 +296,7 @@ export default function App() {
   const [assignmentFolders, setAssignmentFolders] = useState<AssignmentFolder[]>([]);
   const [assignmentSubmissions, setAssignmentSubmissions] = useState<AssignmentSubmission[]>([]);
   const [livePresentation, setLivePresentation] = useState<LivePresentationSession | undefined>(undefined);
+  const [livePresentations, setLivePresentations] = useState<LivePresentationSession[]>([]);
 
   // Portal Tab & Registration Form states
   const [portalTab, setPortalTab] = useState<'login' | 'register'>('login');
@@ -340,8 +341,10 @@ export default function App() {
     const unsubAssignmentSubmissions = syncCollection('assignmentSubmissions', setAssignmentSubmissions, []);
     const unsubSchoolConfig = syncConfig('schoolConfig', setSchoolConfig, DEFAULT_SCHOOL_CONFIG);
     const unsubLivePresentation = syncConfig<LivePresentationSession | undefined>('livePresentation', setLivePresentation, undefined);
+    const unsubLivePresentations = syncCollection('livePresentations', setLivePresentations, []);
 
     return () => {
+      unsubLivePresentations();
       unsubLivePresentation();
       unsubAssignmentFolders();
       unsubAssignmentSubmissions();
@@ -379,8 +382,19 @@ export default function App() {
   };
 
   const handleUpdateLivePresentation = (session: LivePresentationSession) => {
-    setLivePresentation(session);
-    saveConfig('livePresentation', session);
+    if (!session) return;
+    const teacherId = session.teacherId || 'unknown_teacher';
+    const docId = session.id || teacherId;
+    const sessionWithId = { ...session, id: docId, teacherId, updatedAt: Date.now() };
+
+    setLivePresentation(sessionWithId);
+    saveConfig('livePresentation', sessionWithId);
+
+    if (!session.active) {
+      deleteDocument('livePresentations', docId);
+    } else {
+      updateDocument('livePresentations', sessionWithId);
+    }
   };
 
   const handleRegisterAccount = (e: React.FormEvent) => {
@@ -1443,6 +1457,7 @@ export default function App() {
                 onUpdateAssignmentSubmission={handleUpdateAssignmentSubmission}
                 onDeleteAssignmentSubmission={handleDeleteAssignmentSubmission}
                 livePresentation={livePresentation}
+                livePresentations={livePresentations}
                 onUpdateLivePresentation={handleUpdateLivePresentation}
               />
             )}
@@ -1496,6 +1511,7 @@ export default function App() {
                 assignmentSubmissions={assignmentSubmissions}
                 onSaveAssignmentSubmission={handleSaveAssignmentSubmission}
                 livePresentation={livePresentation}
+                livePresentations={livePresentations}
                 onUpdateLivePresentation={handleUpdateLivePresentation}
               />
             )}

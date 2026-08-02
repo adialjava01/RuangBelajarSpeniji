@@ -34,6 +34,7 @@ interface StudentPanelProps {
   assignmentSubmissions?: AssignmentSubmission[];
   onSaveAssignmentSubmission?: (sub: Omit<AssignmentSubmission, 'id' | 'submittedAt'>) => void;
   livePresentation?: LivePresentationSession;
+  livePresentations?: LivePresentationSession[];
   onUpdateLivePresentation?: (session: LivePresentationSession) => void;
 }
 
@@ -117,9 +118,29 @@ export default function StudentPanel({
   assignmentFolders = [],
   assignmentSubmissions = [],
   onSaveAssignmentSubmission,
-  livePresentation,
+  livePresentation: rawLivePresentation,
+  livePresentations,
   onUpdateLivePresentation
 }: StudentPanelProps) {
+  const livePresentation = (() => {
+    if (livePresentations && livePresentations.length > 0 && currentStudent) {
+      const activeSessions = livePresentations.filter(lp => lp.active);
+      if (activeSessions.length === 0) return undefined;
+      
+      // 1. Match by student's classId
+      const classMatch = activeSessions.find(lp => {
+        if (!lp.classId) return false;
+        const classList = lp.classId.split(',').map(c => c.trim());
+        return classList.includes(currentStudent.classId) || classList.includes('ALL');
+      });
+      if (classMatch) return classMatch;
+
+      // 2. Return first active session as fallback
+      return activeSessions[0];
+    }
+    return rawLivePresentation?.active ? rawLivePresentation : undefined;
+  })();
+
   const [activeTab, setActiveTab] = useState<'beranda' | 'materials' | 'assignments' | 'exams' | 'scores' | 'bk' | 'live_presentation'>('beranda');
   const [dailyMood, setDailyMood] = useState<'Senang' | 'Biasa' | 'Sedih' | 'Marah' | 'Takut' | 'Lelah'>('Senang');
   const [dailyNote, setDailyNote] = useState('');

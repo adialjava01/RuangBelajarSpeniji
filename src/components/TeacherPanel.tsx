@@ -87,6 +87,7 @@ interface TeacherPanelProps {
   onUpdateAssignmentSubmission?: (sub: AssignmentSubmission) => void;
   onDeleteAssignmentSubmission?: (id: string) => void;
   livePresentation?: LivePresentationSession;
+  livePresentations?: LivePresentationSession[];
   onUpdateLivePresentation?: (session: LivePresentationSession) => void;
 }
 
@@ -197,8 +198,13 @@ export default function TeacherPanel({
   onUpdateAssignmentSubmission,
   onDeleteAssignmentSubmission,
   livePresentation,
+  livePresentations,
   onUpdateLivePresentation
 }: TeacherPanelProps) {
+  const myLivePresentation = (livePresentations && currentTeacher)
+    ? livePresentations.find(lp => lp.teacherId === currentTeacher.id && lp.active)
+    : (livePresentation?.teacherId === currentTeacher?.id ? livePresentation : undefined);
+
   const myScheduleNotes = (scheduleNotes || []).filter(n => n.teacherId === currentTeacher.id);
   const sortedClasses = [...classes].sort((a, b) => {
     const aMatch = a.name.match(/^(VII|VIII|IX|7|8|9)(.*)$/i);
@@ -255,9 +261,9 @@ export default function TeacherPanel({
   const lastScrollPctRef = useRef<number>(0);
 
   const handleJumpToSlide = (targetSlide: number) => {
-    const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
+    const currentMat = activeLiveMaterial || materials.find(m => m.id === myLivePresentation?.materialId);
     const contentParagraphs = currentMat?.content ? currentMat.content.split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim()) : [];
-    const computedTotalSlides = Math.max(livePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
+    const computedTotalSlides = Math.max(myLivePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
     const newSlide = Math.min(computedTotalSlides, Math.max(1, targetSlide));
     setLiveSlideNum(newSlide);
     if (teacherContentRef.current) {
@@ -265,31 +271,33 @@ export default function TeacherPanel({
     }
     if (onUpdateLivePresentation) {
       onUpdateLivePresentation({
-        id: 'active_session',
-        materialId: activeLiveMaterial?.id || livePresentation?.materialId || '',
-        materialTitle: activeLiveMaterial?.title || livePresentation?.materialTitle || '',
+        id: currentTeacher.id,
+        materialId: activeLiveMaterial?.id || myLivePresentation?.materialId || '',
+        materialTitle: activeLiveMaterial?.title || myLivePresentation?.materialTitle || '',
         teacherId: currentTeacher.id,
         teacherName: currentTeacher.name,
+        classId: activeLiveMaterial ? (Array.isArray(activeLiveMaterial.classId) ? activeLiveMaterial.classId.join(',') : activeLiveMaterial.classId) : myLivePresentation?.classId,
+        subjectName: currentTeacher.subject,
         currentSlide: newSlide,
         totalSlides: computedTotalSlides,
         laserPointer: liveLaserPointer || { x: 50, y: 50 },
         scrollPosition: 0,
         active: true,
-        startedAt: livePresentation?.startedAt || new Date().toISOString()
+        startedAt: myLivePresentation?.startedAt || new Date().toISOString()
       });
     }
   };
 
   // Keyboard navigation for live presentation mode (Arrow keys / Space)
   useEffect(() => {
-    if (!activeLiveMaterial && !livePresentation?.active) return;
+    if (!activeLiveMaterial && !myLivePresentation?.active) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
 
-      const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
+      const currentMat = activeLiveMaterial || materials.find(m => m.id === myLivePresentation?.materialId);
       const contentParagraphs = currentMat?.content ? currentMat.content.split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim()) : [];
-      const computedTotalSlides = Math.max(livePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
+      const computedTotalSlides = Math.max(myLivePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
 
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
         e.preventDefault();
@@ -302,11 +310,11 @@ export default function TeacherPanel({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeLiveMaterial, livePresentation, liveSlideNum, materials]);
+  }, [activeLiveMaterial, myLivePresentation, liveSlideNum, materials]);
 
   // Global window scroll sync for Teacher Presentation Mode
   useEffect(() => {
-    if (!activeLiveMaterial && !livePresentation?.active) return;
+    if (!activeLiveMaterial && !myLivePresentation?.active) return;
 
     let tick = false;
     const handleGlobalWindowScroll = () => {
@@ -321,22 +329,24 @@ export default function TeacherPanel({
           if (!teacherContentRef.current || teacherContentRef.current.scrollHeight <= teacherContentRef.current.clientHeight) {
             lastScrollPctRef.current = winScrollPct;
             if (onUpdateLivePresentation) {
-              const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
+              const currentMat = activeLiveMaterial || materials.find(m => m.id === myLivePresentation?.materialId);
               const contentParagraphs = (currentMat?.content || '').split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim());
-              const computedTotal = Math.max(livePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
+              const computedTotal = Math.max(myLivePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
 
               onUpdateLivePresentation({
-                id: 'active_session',
-                materialId: activeLiveMaterial?.id || livePresentation?.materialId || '',
-                materialTitle: activeLiveMaterial?.title || livePresentation?.materialTitle || '',
+                id: currentTeacher.id,
+                materialId: activeLiveMaterial?.id || myLivePresentation?.materialId || '',
+                materialTitle: activeLiveMaterial?.title || myLivePresentation?.materialTitle || '',
                 teacherId: currentTeacher.id,
                 teacherName: currentTeacher.name,
+                classId: activeLiveMaterial ? (Array.isArray(activeLiveMaterial.classId) ? activeLiveMaterial.classId.join(',') : activeLiveMaterial.classId) : myLivePresentation?.classId,
+                subjectName: currentTeacher.subject,
                 currentSlide: liveSlideNum,
                 totalSlides: computedTotal,
                 laserPointer: liveLaserPointer || { x: 50, y: 50 },
                 scrollPosition: winScrollPct,
                 active: true,
-                startedAt: livePresentation?.startedAt || new Date().toISOString()
+                startedAt: myLivePresentation?.startedAt || new Date().toISOString()
               });
             }
           }
@@ -346,7 +356,7 @@ export default function TeacherPanel({
 
     window.addEventListener('scroll', handleGlobalWindowScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleGlobalWindowScroll);
-  }, [activeLiveMaterial, livePresentation, liveSlideNum, liveLaserPointer, materials, currentTeacher]);
+  }, [activeLiveMaterial, myLivePresentation, liveSlideNum, liveLaserPointer, materials, currentTeacher]);
 
   // --- 0. IDENTITAS SEKOLAH & KEPALA SEKOLAH STATE ---
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentityConfig>(() => {
@@ -3809,11 +3819,13 @@ export default function TeacherPanel({
                               const contentParagraphs = mat.content ? mat.content.split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim()) : [];
                               const calculatedTotal = contentParagraphs.length > 0 ? contentParagraphs.length : 25;
                               const session: LivePresentationSession = {
-                                id: 'active_session',
+                                id: currentTeacher.id,
                                 materialId: mat.id,
                                 materialTitle: mat.title,
                                 teacherId: currentTeacher.id,
                                 teacherName: currentTeacher.name,
+                                classId: Array.isArray(mat.classId) ? mat.classId.join(',') : mat.classId,
+                                subjectName: currentTeacher.subject,
                                 currentSlide: 1,
                                 totalSlides: calculatedTotal,
                                 scrollPosition: 0,
@@ -8657,7 +8669,7 @@ export default function TeacherPanel({
       })()}
 
       {/* MODAL TEACHER LIVE PRESENTATION REAL-TIME SYNC CONTROL */}
-      {(activeLiveMaterial || livePresentation?.active) && (
+      {(activeLiveMaterial || myLivePresentation?.active) && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 z-50 animate-fade-in">
           <div className="bg-slate-900 text-white rounded-3xl shadow-2xl border border-slate-800 w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden">
             {/* Top Header Bar */}
@@ -8676,7 +8688,7 @@ export default function TeacherPanel({
                     </span>
                   </div>
                   <h3 className="font-black text-sm sm:text-base text-white mt-0.5">
-                    {activeLiveMaterial?.title || livePresentation?.materialTitle}
+                    {activeLiveMaterial?.title || myLivePresentation?.materialTitle}
                   </h3>
                 </div>
               </div>
@@ -8687,7 +8699,7 @@ export default function TeacherPanel({
                   onClick={() => {
                     if (onUpdateLivePresentation) {
                       onUpdateLivePresentation({
-                        id: 'active_session',
+                        id: currentTeacher.id,
                         materialId: '',
                         materialTitle: '',
                         teacherId: currentTeacher.id,
@@ -8714,7 +8726,7 @@ export default function TeacherPanel({
               className="flex-1 bg-slate-950 p-2 sm:p-4 relative flex flex-col items-center justify-center overflow-hidden cursor-crosshair group"
             >
               {(() => {
-                const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
+                const currentMat = activeLiveMaterial || materials.find(m => m.id === myLivePresentation?.materialId);
                 const currentUrl = currentMat?.fileUrl || '';
                 let embedUrl: string | null = null;
                 if (currentUrl.includes('youtube.com/watch') || currentUrl.includes('youtu.be/')) {
@@ -8742,7 +8754,7 @@ export default function TeacherPanel({
                   ? (contentParagraphs[Math.min(liveSlideNum - 1, contentParagraphs.length - 1)] || currentMat?.content)
                   : currentMat?.content;
 
-                const computedTotalSlides = Math.max(livePresentation?.totalSlides || 1, contentParagraphs.length || 1);
+                const computedTotalSlides = Math.max(myLivePresentation?.totalSlides || 1, contentParagraphs.length || 1);
 
                 const handlePointerAndScrollUpdate = (xPct: number, yPct: number, scrollPct?: number) => {
                   setLiveLaserPointer({ x: xPct, y: yPct });
@@ -8754,7 +8766,7 @@ export default function TeacherPanel({
                     currentScrollPct = maxScroll > 0 ? (target.scrollTop / maxScroll) * 100 : 0;
                   }
                   if (currentScrollPct === undefined) {
-                    currentScrollPct = lastScrollPctRef.current || livePresentation?.scrollPosition || 0;
+                    currentScrollPct = lastScrollPctRef.current || myLivePresentation?.scrollPosition || 0;
                   }
 
                   currentScrollPct = Math.round(currentScrollPct * 100) / 100;
@@ -8762,22 +8774,24 @@ export default function TeacherPanel({
 
                   const performSync = () => {
                     lastLaserSyncRef.current = Date.now();
-                    const currentMatTitle = activeLiveMaterial?.title || livePresentation?.materialTitle || '';
-                    const currentMatId = activeLiveMaterial?.id || livePresentation?.materialId || '';
+                    const currentMatTitle = activeLiveMaterial?.title || myLivePresentation?.materialTitle || '';
+                    const currentMatId = activeLiveMaterial?.id || myLivePresentation?.materialId || '';
 
                     if (onUpdateLivePresentation) {
                       onUpdateLivePresentation({
-                        id: 'active_session',
+                        id: currentTeacher.id,
                         materialId: currentMatId,
                         materialTitle: currentMatTitle,
                         teacherId: currentTeacher.id,
                         teacherName: currentTeacher.name,
+                        classId: activeLiveMaterial ? (Array.isArray(activeLiveMaterial.classId) ? activeLiveMaterial.classId.join(',') : activeLiveMaterial.classId) : myLivePresentation?.classId,
+                        subjectName: currentTeacher.subject,
                         currentSlide: liveSlideNum,
                         totalSlides: computedTotalSlides,
                         laserPointer: { x: xPct, y: yPct },
                         scrollPosition: currentScrollPct,
                         active: true,
-                        startedAt: livePresentation?.startedAt || new Date().toISOString()
+                        startedAt: myLivePresentation?.startedAt || new Date().toISOString()
                       });
                     }
                   };
@@ -8838,7 +8852,7 @@ export default function TeacherPanel({
                     </div>
 
                     <h2 className="text-xl sm:text-2xl font-black text-white max-w-2xl shrink-0">
-                      {currentMat?.title || activeLiveMaterial?.title || livePresentation?.materialTitle}
+                      {currentMat?.title || activeLiveMaterial?.title || myLivePresentation?.materialTitle}
                     </h2>
 
                     {embedUrl ? (
@@ -8893,25 +8907,27 @@ export default function TeacherPanel({
 
             {/* Controller Footer Toolbar */}
             {(() => {
-              const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
+              const currentMat = activeLiveMaterial || materials.find(m => m.id === myLivePresentation?.materialId);
               const contentParagraphs = (currentMat?.content || '').split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim());
-              const totSlides = Math.max(livePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
+              const totSlides = Math.max(myLivePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
 
               const updateTotalSlides = (newTotal: number) => {
                 const validTotal = Math.max(1, newTotal);
                 if (onUpdateLivePresentation) {
                   onUpdateLivePresentation({
-                    id: 'active_session',
-                    materialId: activeLiveMaterial?.id || livePresentation?.materialId || '',
-                    materialTitle: activeLiveMaterial?.title || livePresentation?.materialTitle || '',
+                    id: currentTeacher.id,
+                    materialId: activeLiveMaterial?.id || myLivePresentation?.materialId || '',
+                    materialTitle: activeLiveMaterial?.title || myLivePresentation?.materialTitle || '',
                     teacherId: currentTeacher.id,
                     teacherName: currentTeacher.name,
+                    classId: activeLiveMaterial ? (Array.isArray(activeLiveMaterial.classId) ? activeLiveMaterial.classId.join(',') : activeLiveMaterial.classId) : myLivePresentation?.classId,
+                    subjectName: currentTeacher.subject,
                     currentSlide: Math.min(liveSlideNum, validTotal),
                     totalSlides: validTotal,
                     laserPointer: liveLaserPointer || { x: 50, y: 50 },
                     scrollPosition: 0,
                     active: true,
-                    startedAt: livePresentation?.startedAt || new Date().toISOString()
+                    startedAt: myLivePresentation?.startedAt || new Date().toISOString()
                   });
                 }
               };
