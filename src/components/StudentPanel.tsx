@@ -170,10 +170,12 @@ export default function StudentPanel({
     const scrollPct = livePresentation.scrollPosition;
 
     const applyScroll = () => {
+      let matchedContainer = false;
       [studentLiveScrollRef.current, studentModalScrollRef.current].forEach(el => {
         if (el) {
           const maxScroll = el.scrollHeight - el.clientHeight;
           if (maxScroll > 0) {
+            matchedContainer = true;
             const targetTop = Math.round((scrollPct / 100) * maxScroll);
             if (Math.abs(el.scrollTop - targetTop) > 1) {
               el.scrollTo({
@@ -186,6 +188,18 @@ export default function StudentPanel({
           }
         }
       });
+
+      // Window scroll fallback if main page is scrolling
+      const winMaxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      if (!matchedContainer && winMaxScroll > 0) {
+        const winTargetTop = Math.round((scrollPct / 100) * winMaxScroll);
+        if (Math.abs(window.scrollY - winTargetTop) > 2) {
+          window.scrollTo({
+            top: winTargetTop,
+            behavior: 'smooth'
+          });
+        }
+      }
     };
 
     applyScroll();

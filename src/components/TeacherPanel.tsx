@@ -304,6 +304,50 @@ export default function TeacherPanel({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeLiveMaterial, livePresentation, liveSlideNum, materials]);
 
+  // Global window scroll sync for Teacher Presentation Mode
+  useEffect(() => {
+    if (!activeLiveMaterial && !livePresentation?.active) return;
+
+    let tick = false;
+    const handleGlobalWindowScroll = () => {
+      if (tick) return;
+      tick = true;
+      requestAnimationFrame(() => {
+        tick = false;
+        const winMaxScroll = document.documentElement.scrollHeight - window.innerHeight;
+        if (winMaxScroll > 0) {
+          const winScrollPct = Math.round(((window.scrollY / winMaxScroll) * 100) * 100) / 100;
+          // Sync window scroll if content container is not scrolling or window is explicitly scrolled
+          if (!teacherContentRef.current || teacherContentRef.current.scrollHeight <= teacherContentRef.current.clientHeight) {
+            lastScrollPctRef.current = winScrollPct;
+            if (onUpdateLivePresentation) {
+              const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
+              const contentParagraphs = (currentMat?.content || '').split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim());
+              const computedTotal = Math.max(livePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
+
+              onUpdateLivePresentation({
+                id: 'active_session',
+                materialId: activeLiveMaterial?.id || livePresentation?.materialId || '',
+                materialTitle: activeLiveMaterial?.title || livePresentation?.materialTitle || '',
+                teacherId: currentTeacher.id,
+                teacherName: currentTeacher.name,
+                currentSlide: liveSlideNum,
+                totalSlides: computedTotal,
+                laserPointer: liveLaserPointer || { x: 50, y: 50 },
+                scrollPosition: winScrollPct,
+                active: true,
+                startedAt: livePresentation?.startedAt || new Date().toISOString()
+              });
+            }
+          }
+        }
+      });
+    };
+
+    window.addEventListener('scroll', handleGlobalWindowScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleGlobalWindowScroll);
+  }, [activeLiveMaterial, livePresentation, liveSlideNum, liveLaserPointer, materials, currentTeacher]);
+
   // --- 0. IDENTITAS SEKOLAH & KEPALA SEKOLAH STATE ---
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentityConfig>(() => {
     const saved = localStorage.getItem('smpn1beji_school_identity');
