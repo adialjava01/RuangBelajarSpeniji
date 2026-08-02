@@ -120,7 +120,7 @@ export default function StudentPanel({
   livePresentation,
   onUpdateLivePresentation
 }: StudentPanelProps) {
-  const [activeTab, setActiveTab] = useState<'beranda' | 'materials' | 'assignments' | 'exams' | 'scores' | 'bk'>('beranda');
+  const [activeTab, setActiveTab] = useState<'beranda' | 'materials' | 'assignments' | 'exams' | 'scores' | 'bk' | 'live_presentation'>('beranda');
   const [dailyMood, setDailyMood] = useState<'Senang' | 'Biasa' | 'Sedih' | 'Marah' | 'Takut' | 'Lelah'>('Senang');
   const [dailyNote, setDailyNote] = useState('');
   const [hasCheckedIn, setHasCheckedIn] = useState(false);
@@ -140,12 +140,22 @@ export default function StudentPanel({
   const [studentSlideOverride, setStudentSlideOverride] = useState<number | null>(null);
 
   useEffect(() => {
-    if (livePresentation?.active) {
+    if (livePresentation && livePresentation.active) {
       setShowLiveSyncModal(true);
       setStudentFollowSync(true);
       setStudentSlideOverride(null);
+      setActiveTab('live_presentation');
+      toast(`🔴 Presentasi Mode Lab Komputer "${livePresentation.materialTitle}" sedang ditayangkan oleh Guru!`, {
+        icon: '📺',
+        duration: 5000
+      });
     }
-  }, [livePresentation?.active, livePresentation?.startedAt, livePresentation?.materialId]);
+  }, [
+    livePresentation?.active, 
+    livePresentation?.startedAt, 
+    livePresentation?.materialId,
+    livePresentation?.currentSlide
+  ]);
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -648,6 +658,32 @@ export default function StudentPanel({
                 </span>
               )}
             </button>
+
+            {/* DEDICATED LIVE PRESENTATION / MODE LAB TAB */}
+            <button
+              onClick={() => {
+                setActiveTab('live_presentation');
+                if (livePresentation?.active) {
+                  setShowLiveSyncModal(true);
+                }
+              }}
+              className={`flex-1 sm:flex-none text-center whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                livePresentation?.active
+                  ? 'bg-red-600 text-white shadow-lg animate-pulse font-black ring-2 ring-red-400'
+                  : activeTab === 'live_presentation'
+                  ? 'bg-red-50 text-red-700 font-extrabold border border-red-200'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Radio className={`w-3.5 h-3.5 ${livePresentation?.active ? 'text-white animate-spin' : 'text-red-500'}`} />
+              <span>📺 Mode Lab Presentasi</span>
+              {livePresentation?.active && (
+                <span className="bg-white text-red-600 text-[10px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider">
+                  LIVE
+                </span>
+              )}
+            </button>
+
             <button
               onClick={() => setActiveTab('bk')}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${
@@ -700,6 +736,171 @@ export default function StudentPanel({
             </button>
           </div>
         </div>
+        </div>
+      )}
+
+      {/* DEDICATED LIVE PRESENTATION / MODE LAB TAB SECTION */}
+      {activeTab === 'live_presentation' && !examStarted && (
+        <div className="space-y-6 animate-fade-in">
+          {livePresentation?.active ? (
+            <div className="bg-slate-950 border-2 border-red-500 rounded-3xl shadow-2xl p-6 text-white space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-red-600 flex items-center justify-center font-black animate-pulse shadow-lg shrink-0">
+                    <Radio className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 bg-red-600/30 text-red-400 border border-red-500/50 text-[10px] font-black rounded-full uppercase tracking-wider">
+                        🔴 SIARAN LIVE AKTIF
+                      </span>
+                      <span className="text-xs text-slate-300 font-bold">
+                        Guru Pengampu: {livePresentation.teacherName}
+                      </span>
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-black text-white mt-1">
+                      {livePresentation.materialTitle}
+                    </h2>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStudentFollowSync(!studentFollowSync);
+                      if (!studentFollowSync) setStudentSlideOverride(null);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                      studentFollowSync
+                        ? 'bg-emerald-600 text-white shadow-md'
+                        : 'bg-slate-800 text-slate-300 border border-slate-700'
+                    }`}
+                  >
+                    {studentFollowSync ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                    <span>{studentFollowSync ? 'Sync Otomatis Terkunci' : 'Sync Dilepas (Bebas)'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowLiveSyncModal(true)}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-extrabold shadow-md transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <Tv className="w-4 h-4" />
+                    <span>Layar Penuh Modal</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Slide Screen View */}
+              {(() => {
+                const activeSlide = studentFollowSync ? livePresentation.currentSlide : (studentSlideOverride || livePresentation.currentSlide);
+                const mat = materials.find(m => m.id === livePresentation.materialId);
+                const currentUrl = mat?.fileUrl || '';
+                let embedUrl: string | null = null;
+                if (currentUrl.includes('youtube.com/watch') || currentUrl.includes('youtu.be/')) {
+                  let vId = '';
+                  if (currentUrl.includes('v=')) vId = currentUrl.split('v=')[1]?.split('&')[0] || '';
+                  else if (currentUrl.includes('youtu.be/')) vId = currentUrl.split('youtu.be/')[1]?.split('?')[0] || '';
+                  if (vId) embedUrl = `https://www.youtube.com/embed/${vId}`;
+                } else if (currentUrl.includes('drive.google.com/file/d/')) {
+                  const fId = currentUrl.split('/d/')[1]?.split('/')[0];
+                  if (fId) embedUrl = `https://drive.google.com/file/d/${fId}/preview`;
+                } else if (currentUrl.includes('docs.google.com/presentation/d/')) {
+                  const sId = currentUrl.split('/d/')[1]?.split('/')[0];
+                  if (sId) embedUrl = `https://docs.google.com/presentation/d/${sId}/embed?start=false&loop=false&delayms=3000`;
+                } else if (currentUrl.includes('docs.google.com/document/d/')) {
+                  const dId = currentUrl.split('/d/')[1]?.split('/')[0];
+                  if (dId) embedUrl = `https://docs.google.com/document/d/${dId}/pub?embedded=true`;
+                } else if (currentUrl.toLowerCase().endsWith('.pdf') || currentUrl.toLowerCase().includes('.pdf?')) {
+                  embedUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(currentUrl)}&embedded=true`;
+                }
+                const isImg = /\.(png|jpe?g|gif|svg|webp)(\?.*)?$/i.test(currentUrl) || currentUrl.startsWith('data:image/');
+
+                return (
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative flex flex-col items-center justify-center text-center space-y-4 shadow-2xl min-h-[500px]">
+                    {livePresentation.laserPointer && studentFollowSync && (
+                      <div
+                        className="absolute w-6 h-6 rounded-full bg-red-500/80 border-2 border-white shadow-lg pointer-events-none z-30 animate-ping"
+                        style={{
+                          left: `${livePresentation.laserPointer.x}%`,
+                          top: `${livePresentation.laserPointer.y}%`,
+                          transform: 'translate(-50%, -50%)'
+                        }}
+                      />
+                    )}
+
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700">
+                      <Tv className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>TAYANG PADA KOMPUTER SISWA • SLIDE {activeSlide} DARI {livePresentation.totalSlides}</span>
+                    </div>
+
+                    <h3 className="text-2xl font-black text-white max-w-2xl">
+                      {mat?.title || livePresentation.materialTitle}
+                    </h3>
+
+                    {embedUrl ? (
+                      <div className="w-full h-[60vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2">
+                        <iframe
+                          src={embedUrl}
+                          className="w-full h-full border-0"
+                          allow="autoplay; encrypted-media; picture-in-picture"
+                          allowFullScreen
+                          title="Media Presentasi Tab Siswa"
+                        />
+                      </div>
+                    ) : isImg ? (
+                      <div className="max-w-3xl max-h-[60vh] overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2">
+                        <img src={currentUrl} alt="Slide Media" className="max-h-[55vh] object-contain mx-auto" />
+                      </div>
+                    ) : mat?.content ? (
+                      <div className="text-sm text-slate-200 max-w-3xl leading-relaxed text-left bg-slate-800/80 p-6 rounded-2xl border border-slate-700/80 shadow-inner overflow-y-auto max-h-[55vh]">
+                        {mat.content}
+                      </div>
+                    ) : (
+                      <div className="p-8 bg-slate-800/50 rounded-2xl border border-slate-700 text-slate-300 max-w-lg space-y-3">
+                        <p className="text-xs">
+                          Materi pembelajaran ini sedang dipandu langsung oleh Bpk/Ibu Guru di lab komputer.
+                        </p>
+                        {currentUrl && (
+                          <a
+                            href={currentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition"
+                          >
+                            <ExternalLink className="w-4 h-4" /> Buka Dokumen / Slide Sumber
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 text-center space-y-4">
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                <Tv className="w-8 h-8" />
+              </div>
+              <div className="max-w-md mx-auto space-y-2">
+                <h2 className="text-xl font-black text-slate-900">Mode Lab Komputer Real-Time</h2>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Belum ada siaran presentasi yang diaktifkan oleh Guru saat ini. Ketika Guru menekan tombol <strong>Mode Lab</strong> di layar utama, tayangan slide dan penjelasan akan otomatis muncul secara Pop-up Modal di seluruh komputer siswa secara real-time.
+                </p>
+              </div>
+              <div className="pt-4 flex justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('materials')}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span>Lihat Perpustakaan Bahan Ajar</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2622,8 +2823,8 @@ export default function StudentPanel({
       )}
 
       {/* MODAL STUDENT LIVE PRESENTATION SYNCHRONIZED VIEWER */}
-      {showLiveSyncModal && livePresentation && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 z-50 animate-fade-in">
+      {((showLiveSyncModal || livePresentation?.active) && livePresentation && livePresentation.active) && (
+        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 z-[99999] animate-fade-in">
           <div className="bg-slate-900 text-white rounded-3xl shadow-2xl border border-slate-800 w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden">
             {/* Header */}
             <div className="bg-slate-950 p-4 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
@@ -2810,6 +3011,20 @@ export default function StudentPanel({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* FLOATING QUICK LAUNCHER WIDGET FOR LIVE PRESENTATION */}
+      {livePresentation?.active && !showLiveSyncModal && (
+        <div className="fixed bottom-6 right-6 z-[9999] animate-bounce">
+          <button
+            type="button"
+            onClick={() => setShowLiveSyncModal(true)}
+            className="px-5 py-3 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white rounded-2xl shadow-2xl font-black text-xs border-2 border-white flex items-center gap-2 cursor-pointer hover:scale-105 transition"
+          >
+            <Radio className="w-4 h-4 animate-spin text-white" />
+            <span>🔴 PRESENTASI LIVE LAB (Slide {livePresentation.currentSlide}/{livePresentation.totalSlides}) • Klik Buka</span>
+          </button>
         </div>
       )}
     </>
