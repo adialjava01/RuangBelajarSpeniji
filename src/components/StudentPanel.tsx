@@ -142,18 +142,31 @@ export default function StudentPanel({
   const studentModalScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (studentFollowSync && typeof livePresentation?.scrollPosition === 'number') {
-      const scrollPct = livePresentation.scrollPosition;
+    if (!studentFollowSync || typeof livePresentation?.scrollPosition !== 'number') return;
+
+    const applyScroll = () => {
+      const scrollPct = livePresentation?.scrollPosition ?? 0;
       [studentLiveScrollRef.current, studentModalScrollRef.current].forEach(el => {
         if (el) {
           const maxScroll = el.scrollHeight - el.clientHeight;
           if (maxScroll > 0) {
-            el.scrollTop = (scrollPct / 100) * maxScroll;
+            el.scrollTop = Math.round((scrollPct / 100) * maxScroll);
+          } else {
+            el.scrollTop = 0;
           }
         }
       });
-    }
-  }, [livePresentation?.scrollPosition, studentFollowSync, livePresentation?.currentSlide]);
+    };
+
+    applyScroll();
+    const rafId = requestAnimationFrame(applyScroll);
+    const timerId = setTimeout(applyScroll, 60);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timerId);
+    };
+  }, [livePresentation?.scrollPosition, studentFollowSync, livePresentation?.currentSlide, showLiveSyncModal, activeTab]);
 
   useEffect(() => {
     if (livePresentation && livePresentation.active) {
@@ -834,12 +847,12 @@ export default function StudentPanel({
                 const isImg = /\.(png|jpe?g|gif|svg|webp)(\?.*)?$/i.test(currentUrl) || currentUrl.startsWith('data:image/');
 
                 // Split text content into paragraphs/slides if available
-                const contentParagraphs = mat?.content ? mat.content.split(/\n\n|---/).filter(p => p.trim()) : [];
+                const contentParagraphs = mat?.content ? mat.content.split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim()) : [];
                 const activeContentChunk = contentParagraphs.length > 0 
                   ? (contentParagraphs[Math.min(activeSlide - 1, contentParagraphs.length - 1)] || mat?.content)
                   : mat?.content;
 
-                const displayTotal = Math.max(livePresentation.totalSlides || 10, contentParagraphs.length || 10);
+                const displayTotal = Math.max(livePresentation.totalSlides || 1, contentParagraphs.length || 1);
 
                 return (
                   <div 
@@ -878,6 +891,7 @@ export default function StudentPanel({
                     {embedUrl ? (
                       <div className="w-full h-[60vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2 shrink-0">
                         <iframe
+                          key={`student_tab_embed_${embedUrl}_${activeSlide}`}
                           src={embedUrl}
                           className="w-full h-full border-0"
                           allow="autoplay; encrypted-media; picture-in-picture"
@@ -2943,12 +2957,12 @@ export default function StudentPanel({
                 const isImg = /\.(png|jpe?g|gif|svg|webp)(\?.*)?$/i.test(currentUrl) || currentUrl.startsWith('data:image/');
 
                 // Split text content into paragraphs/slides if available
-                const contentParagraphs = mat?.content ? mat.content.split(/\n\n|---/).filter(p => p.trim()) : [];
+                const contentParagraphs = mat?.content ? mat.content.split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim()) : [];
                 const activeContentChunk = contentParagraphs.length > 0 
                   ? (contentParagraphs[Math.min(activeSlide - 1, contentParagraphs.length - 1)] || mat?.content)
                   : mat?.content;
 
-                const displayTotal = Math.max(livePresentation.totalSlides || 10, contentParagraphs.length || 10);
+                const displayTotal = Math.max(livePresentation.totalSlides || 1, contentParagraphs.length || 1);
 
                 return (
                   <div className="w-full h-full relative flex items-center justify-center">
@@ -2988,6 +3002,7 @@ export default function StudentPanel({
                       {embedUrl ? (
                         <div className="w-full h-[55vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2 shrink-0">
                           <iframe
+                            key={`student_modal_embed_${embedUrl}_${activeSlide}`}
                             src={embedUrl}
                             className="w-full h-full border-0"
                             allow="autoplay; encrypted-media; picture-in-picture"
