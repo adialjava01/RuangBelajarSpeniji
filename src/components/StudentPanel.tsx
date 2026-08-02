@@ -140,17 +140,47 @@ export default function StudentPanel({
   const [studentSlideOverride, setStudentSlideOverride] = useState<number | null>(null);
   const studentLiveScrollRef = useRef<HTMLDivElement | null>(null);
   const studentModalScrollRef = useRef<HTMLDivElement | null>(null);
+  const lastSlideRef = useRef<number | null>(null);
+
+  // Auto-Reset Scroll to Top whenever the teacher changes the current slide
+  useEffect(() => {
+    if (livePresentation?.currentSlide !== undefined && livePresentation.currentSlide !== lastSlideRef.current) {
+      lastSlideRef.current = livePresentation.currentSlide;
+      const resetScroll = () => {
+        [studentLiveScrollRef.current, studentModalScrollRef.current].forEach(el => {
+          if (el) {
+            el.scrollTop = 0;
+          }
+        });
+      };
+      resetScroll();
+      requestAnimationFrame(resetScroll);
+      const timer1 = setTimeout(resetScroll, 50);
+      const timer2 = setTimeout(resetScroll, 150);
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
+    }
+  }, [livePresentation?.currentSlide, showLiveSyncModal]);
 
   useEffect(() => {
     if (!studentFollowSync || typeof livePresentation?.scrollPosition !== 'number') return;
 
+    const scrollPct = livePresentation.scrollPosition;
+
     const applyScroll = () => {
-      const scrollPct = livePresentation?.scrollPosition ?? 0;
       [studentLiveScrollRef.current, studentModalScrollRef.current].forEach(el => {
         if (el) {
           const maxScroll = el.scrollHeight - el.clientHeight;
           if (maxScroll > 0) {
-            el.scrollTop = Math.round((scrollPct / 100) * maxScroll);
+            const targetTop = Math.round((scrollPct / 100) * maxScroll);
+            if (Math.abs(el.scrollTop - targetTop) > 1) {
+              el.scrollTo({
+                top: targetTop,
+                behavior: 'smooth'
+              });
+            }
           } else {
             el.scrollTop = 0;
           }
@@ -160,13 +190,52 @@ export default function StudentPanel({
 
     applyScroll();
     const rafId = requestAnimationFrame(applyScroll);
-    const timerId = setTimeout(applyScroll, 60);
+    const timer1 = setTimeout(applyScroll, 40);
+    const timer2 = setTimeout(applyScroll, 120);
+    const timer3 = setTimeout(applyScroll, 300);
 
     return () => {
       cancelAnimationFrame(rafId);
-      clearTimeout(timerId);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
     };
   }, [livePresentation?.scrollPosition, studentFollowSync, livePresentation?.currentSlide, showLiveSyncModal, activeTab]);
+
+  // ResizeObserver listener so if images, math, or text load dynamically, scroll stays locked to teacher
+  useEffect(() => {
+    if (!studentFollowSync || typeof livePresentation?.scrollPosition !== 'number') return;
+
+    const scrollPct = livePresentation.scrollPosition;
+    const syncScroll = () => {
+      [studentLiveScrollRef.current, studentModalScrollRef.current].forEach(el => {
+        if (el) {
+          const maxScroll = el.scrollHeight - el.clientHeight;
+          if (maxScroll > 0) {
+            const targetTop = Math.round((scrollPct / 100) * maxScroll);
+            if (Math.abs(el.scrollTop - targetTop) > 2) {
+              el.scrollTo({
+                top: targetTop,
+                behavior: 'smooth'
+              });
+            }
+          }
+        }
+      });
+    };
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observers: ResizeObserver[] = [];
+      [studentLiveScrollRef.current, studentModalScrollRef.current].forEach(el => {
+        if (el) {
+          const ro = new ResizeObserver(() => syncScroll());
+          ro.observe(el);
+          observers.push(ro);
+        }
+      });
+      return () => observers.forEach(ro => ro.disconnect());
+    }
+  }, [livePresentation?.scrollPosition, studentFollowSync, showLiveSyncModal, activeTab]);
 
   useEffect(() => {
     if (livePresentation && livePresentation.active) {
@@ -857,7 +926,7 @@ export default function StudentPanel({
                 return (
                   <div 
                     ref={studentLiveScrollRef}
-                    className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 relative flex flex-col items-center justify-start text-center space-y-4 shadow-2xl min-h-[500px] overflow-y-auto max-h-[75vh]"
+                    className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 relative flex flex-col items-center justify-start text-center space-y-4 shadow-2xl min-h-[500px] overflow-y-auto max-h-[75vh] scroll-smooth"
                   >
                     {/* Laser Pointer overlay from Teacher */}
                     {livePresentation.laserPointer && studentFollowSync && (
@@ -881,7 +950,13 @@ export default function StudentPanel({
 
                     <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700 shrink-0">
                       <Tv className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>TAYANG REAL-TIME • SLIDE {activeSlide} DARI {displayTotal}</span>
+                      <span>TAYANG REAL-TIME • SLIDE {activeSlide}/{displayTotal}</span>
+                      {studentFollowSync && typeof livePresentation?.scrollPosition === 'number' && (
+                        <span className="ml-1 px-2 py-0.5 bg-emerald-950/80 text-emerald-300 text-[10px] font-black rounded-full border border-emerald-700/80 flex items-center gap-1 shadow-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          Scroll Sync ({Math.round(livePresentation.scrollPosition)}%)
+                        </span>
+                      )}
                     </div>
 
                     <h3 className="text-xl sm:text-2xl font-black text-white max-w-2xl shrink-0">
@@ -2968,7 +3043,7 @@ export default function StudentPanel({
                   <div className="w-full h-full relative flex items-center justify-center">
                     <div 
                       ref={studentModalScrollRef}
-                      className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-start text-center space-y-4 shadow-2xl overflow-y-auto relative"
+                      className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-start text-center space-y-4 shadow-2xl overflow-y-auto relative scroll-smooth"
                     >
                       {/* Laser Pointer overlay from Teacher */}
                       {livePresentation.laserPointer && studentFollowSync && (
@@ -2992,7 +3067,13 @@ export default function StudentPanel({
 
                       <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700 shrink-0">
                         <Tv className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>SIARAN LIVE LAB • SLIDE {activeSlide} DARI {displayTotal}</span>
+                        <span>SIARAN LIVE LAB • SLIDE {activeSlide}/{displayTotal}</span>
+                        {studentFollowSync && typeof livePresentation?.scrollPosition === 'number' && (
+                          <span className="ml-1 px-2 py-0.5 bg-emerald-950/80 text-emerald-300 text-[10px] font-black rounded-full border border-emerald-700/80 flex items-center gap-1 shadow-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            Scroll Sync ({Math.round(livePresentation.scrollPosition)}%)
+                          </span>
+                        )}
                       </div>
 
                       <h2 className="text-xl sm:text-2xl font-black text-white max-w-2xl shrink-0">

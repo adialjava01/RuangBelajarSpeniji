@@ -251,11 +251,13 @@ export default function TeacherPanel({
   const [liveLaserPointer, setLiveLaserPointer] = useState<{ x: number; y: number } | null>(null);
   const lastLaserSyncRef = useRef<number>(0);
   const teacherContentRef = useRef<HTMLDivElement | null>(null);
+  const scrollDebounceTimeoutRef = useRef<any>(null);
+  const lastScrollPctRef = useRef<number>(0);
 
   const handleJumpToSlide = (targetSlide: number) => {
     const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
     const contentParagraphs = currentMat?.content ? currentMat.content.split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim()) : [];
-    const computedTotalSlides = Math.max(livePresentation?.totalSlides || 1, contentParagraphs.length || 1);
+    const computedTotalSlides = Math.max(livePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
     const newSlide = Math.min(computedTotalSlides, Math.max(1, targetSlide));
     setLiveSlideNum(newSlide);
     if (teacherContentRef.current) {
@@ -277,6 +279,30 @@ export default function TeacherPanel({
       });
     }
   };
+
+  // Keyboard navigation for live presentation mode (Arrow keys / Space)
+  useEffect(() => {
+    if (!activeLiveMaterial && !livePresentation?.active) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
+
+      const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
+      const contentParagraphs = currentMat?.content ? currentMat.content.split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim()) : [];
+      const computedTotalSlides = Math.max(livePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
+
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+        e.preventDefault();
+        handleJumpToSlide(Math.min(computedTotalSlides, liveSlideNum + 1));
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        handleJumpToSlide(Math.max(1, liveSlideNum - 1));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeLiveMaterial, livePresentation, liveSlideNum, materials]);
 
   // --- 0. IDENTITAS SEKOLAH & KEPALA SEKOLAH STATE ---
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentityConfig>(() => {
@@ -3736,6 +3762,8 @@ export default function TeacherPanel({
                             onClick={() => {
                               setActiveLiveMaterial(mat);
                               setLiveSlideNum(1);
+                              const contentParagraphs = mat.content ? mat.content.split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim()) : [];
+                              const calculatedTotal = contentParagraphs.length > 0 ? contentParagraphs.length : 25;
                               const session: LivePresentationSession = {
                                 id: 'active_session',
                                 materialId: mat.id,
@@ -3743,7 +3771,8 @@ export default function TeacherPanel({
                                 teacherId: currentTeacher.id,
                                 teacherName: currentTeacher.name,
                                 currentSlide: 1,
-                                totalSlides: 10,
+                                totalSlides: calculatedTotal,
+                                scrollPosition: 0,
                                 active: true,
                                 startedAt: new Date().toISOString()
                               };
@@ -8673,26 +8702,53 @@ export default function TeacherPanel({
 
                 const handlePointerAndScrollUpdate = (xPct: number, yPct: number, scrollPct?: number) => {
                   setLiveLaserPointer({ x: xPct, y: yPct });
-                  const now = Date.now();
-                  if (now - lastLaserSyncRef.current > 40 && onUpdateLivePresentation) {
-                    lastLaserSyncRef.current = now;
+
+                  let currentScrollPct = scrollPct;
+                  if (currentScrollPct === undefined && teacherContentRef.current) {
+                    const target = teacherContentRef.current;
+                    const maxScroll = target.scrollHeight - target.clientHeight;
+                    currentScrollPct = maxScroll > 0 ? (target.scrollTop / maxScroll) * 100 : 0;
+                  }
+                  if (currentScrollPct === undefined) {
+                    currentScrollPct = lastScrollPctRef.current || livePresentation?.scrollPosition || 0;
+                  }
+
+                  currentScrollPct = Math.round(currentScrollPct * 100) / 100;
+                  lastScrollPctRef.current = currentScrollPct;
+
+                  const performSync = () => {
+                    lastLaserSyncRef.current = Date.now();
                     const currentMatTitle = activeLiveMaterial?.title || livePresentation?.materialTitle || '';
                     const currentMatId = activeLiveMaterial?.id || livePresentation?.materialId || '';
 
-                    onUpdateLivePresentation({
-                      id: 'active_session',
-                      materialId: currentMatId,
-                      materialTitle: currentMatTitle,
-                      teacherId: currentTeacher.id,
-                      teacherName: currentTeacher.name,
-                      currentSlide: liveSlideNum,
-                      totalSlides: computedTotalSlides,
-                      laserPointer: { x: xPct, y: yPct },
-                      scrollPosition: scrollPct !== undefined ? scrollPct : (livePresentation?.scrollPosition || 0),
-                      active: true,
-                      startedAt: livePresentation?.startedAt || new Date().toISOString()
-                    });
+                    if (onUpdateLivePresentation) {
+                      onUpdateLivePresentation({
+                        id: 'active_session',
+                        materialId: currentMatId,
+                        materialTitle: currentMatTitle,
+                        teacherId: currentTeacher.id,
+                        teacherName: currentTeacher.name,
+                        currentSlide: liveSlideNum,
+                        totalSlides: computedTotalSlides,
+                        laserPointer: { x: xPct, y: yPct },
+                        scrollPosition: currentScrollPct,
+                        active: true,
+                        startedAt: livePresentation?.startedAt || new Date().toISOString()
+                      });
+                    }
+                  };
+
+                  const now = Date.now();
+                  if (now - lastLaserSyncRef.current > 30) {
+                    performSync();
                   }
+
+                  if (scrollDebounceTimeoutRef.current) {
+                    clearTimeout(scrollDebounceTimeoutRef.current);
+                  }
+                  scrollDebounceTimeoutRef.current = setTimeout(() => {
+                    performSync();
+                  }, 50);
                 };
 
                 return (
@@ -8707,10 +8763,10 @@ export default function TeacherPanel({
                     onScroll={(e) => {
                       const target = e.currentTarget;
                       const maxScroll = target.scrollHeight - target.clientHeight;
-                      const pct = maxScroll > 0 ? Math.round((target.scrollTop / maxScroll) * 100) : 0;
+                      const pct = maxScroll > 0 ? (target.scrollTop / maxScroll) * 100 : 0;
                       handlePointerAndScrollUpdate(liveLaserPointer?.x ?? 50, liveLaserPointer?.y ?? 50, pct);
                     }}
-                    className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-start text-center space-y-4 shadow-2xl relative overflow-y-auto"
+                    className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-start text-center space-y-4 shadow-2xl relative overflow-y-auto scroll-smooth"
                   >
                     {/* Laser Pointer Visual on Teacher Screen */}
                     {liveLaserPointer && (
@@ -8792,62 +8848,101 @@ export default function TeacherPanel({
             </div>
 
             {/* Controller Footer Toolbar */}
-            <div className="bg-slate-950 p-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const contentParagraphs = (activeLiveMaterial?.content || materials.find(m => m.id === livePresentation?.materialId)?.content || '').split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim());
-                    const total = Math.max(livePresentation?.totalSlides || 1, contentParagraphs.length || 1);
-                    const newSlide = Math.max(1, liveSlideNum - 1);
-                    handleJumpToSlide(newSlide);
-                  }}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1 cursor-pointer"
-                >
-                  <ChevronLeft className="w-4 h-4" /> Slide Sebelumnya
-                </button>
+            {(() => {
+              const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
+              const contentParagraphs = (currentMat?.content || '').split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim());
+              const totSlides = Math.max(livePresentation?.totalSlides || (contentParagraphs.length > 0 ? contentParagraphs.length : 25), 1);
 
-                <span className="font-mono text-xs font-black text-emerald-400 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800">
-                  Slide {liveSlideNum} / {Math.max(livePresentation?.totalSlides || 1, ((activeLiveMaterial?.content || materials.find(m => m.id === livePresentation?.materialId)?.content || '').split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim()).length || 1))}
-                </span>
+              const updateTotalSlides = (newTotal: number) => {
+                const validTotal = Math.max(1, newTotal);
+                if (onUpdateLivePresentation) {
+                  onUpdateLivePresentation({
+                    id: 'active_session',
+                    materialId: activeLiveMaterial?.id || livePresentation?.materialId || '',
+                    materialTitle: activeLiveMaterial?.title || livePresentation?.materialTitle || '',
+                    teacherId: currentTeacher.id,
+                    teacherName: currentTeacher.name,
+                    currentSlide: Math.min(liveSlideNum, validTotal),
+                    totalSlides: validTotal,
+                    laserPointer: liveLaserPointer || { x: 50, y: 50 },
+                    scrollPosition: 0,
+                    active: true,
+                    startedAt: livePresentation?.startedAt || new Date().toISOString()
+                  });
+                }
+              };
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const contentParagraphs = (activeLiveMaterial?.content || materials.find(m => m.id === livePresentation?.materialId)?.content || '').split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim());
-                    const total = Math.max(livePresentation?.totalSlides || 1, contentParagraphs.length || 1);
-                    const newSlide = Math.min(total, liveSlideNum + 1);
-                    handleJumpToSlide(newSlide);
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1 cursor-pointer"
-                >
-                  Slide Selanjutnya <ChevronRight className="w-4 h-4" />
-                </button>
-
-                {/* Direct Slide Jump Pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto max-w-xs sm:max-w-sm py-1 scrollbar-thin">
-                  {Array.from({ length: Math.min(15, Math.max(livePresentation?.totalSlides || 1, ((activeLiveMaterial?.content || materials.find(m => m.id === livePresentation?.materialId)?.content || '').split(/\n\s*\n|\n(?=[A-Z0-9])|---/).filter(p => p.trim()).length || 1))) }, (_, i) => i + 1).map(sNum => (
+              return (
+                <div className="bg-slate-950 p-4 border-t border-slate-800 flex flex-col lg:flex-row items-center justify-between gap-4 shrink-0">
+                  <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
                     <button
-                      key={sNum}
                       type="button"
-                      onClick={() => handleJumpToSlide(sNum)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-black transition shrink-0 cursor-pointer ${
-                        liveSlideNum === sNum
-                          ? 'bg-red-600 text-white ring-2 ring-red-400 shadow-md'
-                          : 'bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-white border border-slate-800'
-                      }`}
+                      onClick={() => handleJumpToSlide(Math.max(1, liveSlideNum - 1))}
+                      className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1 cursor-pointer shrink-0"
                     >
-                      {sNum}
+                      <ChevronLeft className="w-4 h-4" /> Prev
                     </button>
-                  ))}
-                </div>
-              </div>
 
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <MousePointer className="w-4 h-4 text-red-500 animate-pulse" />
-                <span>Navigasi Panah / Keyboard & Laser Real-Time Aktif</span>
-              </div>
-            </div>
+                    <span className="font-mono text-xs font-black text-emerald-400 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800 shrink-0">
+                      Slide {liveSlideNum} / {totSlides}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => handleJumpToSlide(Math.min(totSlides, liveSlideNum + 1))}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      Next <ChevronRight className="w-4 h-4" />
+                    </button>
+
+                    {/* Controls to adjust total slides if file has more slides */}
+                    <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 px-2 py-1 rounded-xl text-xs font-bold text-slate-300 shrink-0">
+                      <span className="text-[11px] text-slate-400">Total:</span>
+                      <button
+                        type="button"
+                        onClick={() => updateTotalSlides(totSlides - 1)}
+                        className="w-5 h-5 bg-slate-800 hover:bg-slate-700 text-white rounded flex items-center justify-center font-black cursor-pointer"
+                        title="Kurangi Total Slide"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono text-emerald-400 font-extrabold px-1">{totSlides}</span>
+                      <button
+                        type="button"
+                        onClick={() => updateTotalSlides(totSlides + 1)}
+                        className="w-5 h-5 bg-slate-800 hover:bg-slate-700 text-white rounded flex items-center justify-center font-black cursor-pointer"
+                        title="Tambah Total Slide"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {/* Direct Slide Jump Pills for ALL slides */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto max-w-xs sm:max-w-md lg:max-w-lg py-1 scrollbar-thin">
+                      {Array.from({ length: totSlides }, (_, i) => i + 1).map(sNum => (
+                        <button
+                          key={sNum}
+                          type="button"
+                          onClick={() => handleJumpToSlide(sNum)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-black transition shrink-0 cursor-pointer ${
+                            liveSlideNum === sNum
+                              ? 'bg-red-600 text-white ring-2 ring-red-400 shadow-md scale-105'
+                              : 'bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-white border border-slate-800'
+                          }`}
+                        >
+                          {sNum}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs text-slate-400 shrink-0">
+                    <MousePointer className="w-4 h-4 text-red-500 animate-pulse" />
+                    <span>Keyboard (←/→) & Laser Real-Time</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
