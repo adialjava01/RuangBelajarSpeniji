@@ -8650,31 +8650,81 @@ export default function TeacherPanel({
                 />
               )}
 
-              <div className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center text-center space-y-4 shadow-2xl relative overflow-y-auto">
-                <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700">
-                  <Tv className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>TAYANG PADA KOMPUTER SISWA • SLIDE {liveSlideNum} DARIPADA {livePresentation?.totalSlides || 10}</span>
-                </div>
+              {(() => {
+                const currentMat = activeLiveMaterial || materials.find(m => m.id === livePresentation?.materialId);
+                const currentUrl = currentMat?.fileUrl || '';
+                let embedUrl: string | null = null;
+                if (currentUrl.includes('youtube.com/watch') || currentUrl.includes('youtu.be/')) {
+                  let vId = '';
+                  if (currentUrl.includes('v=')) vId = currentUrl.split('v=')[1]?.split('&')[0] || '';
+                  else if (currentUrl.includes('youtu.be/')) vId = currentUrl.split('youtu.be/')[1]?.split('?')[0] || '';
+                  if (vId) embedUrl = `https://www.youtube.com/embed/${vId}`;
+                } else if (currentUrl.includes('drive.google.com/file/d/')) {
+                  const fId = currentUrl.split('/d/')[1]?.split('/')[0];
+                  if (fId) embedUrl = `https://drive.google.com/file/d/${fId}/preview`;
+                } else if (currentUrl.includes('docs.google.com/presentation/d/')) {
+                  const sId = currentUrl.split('/d/')[1]?.split('/')[0];
+                  if (sId) embedUrl = `https://docs.google.com/presentation/d/${sId}/embed?start=false&loop=false&delayms=3000`;
+                } else if (currentUrl.includes('docs.google.com/document/d/')) {
+                  const dId = currentUrl.split('/d/')[1]?.split('/')[0];
+                  if (dId) embedUrl = `https://docs.google.com/document/d/${dId}/pub?embedded=true`;
+                } else if (currentUrl.toLowerCase().endsWith('.pdf') || currentUrl.toLowerCase().includes('.pdf?')) {
+                  embedUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(currentUrl)}&embedded=true`;
+                }
+                const isImg = /\.(png|jpe?g|gif|svg|webp)(\?.*)?$/i.test(currentUrl) || currentUrl.startsWith('data:image/');
 
-                <h2 className="text-xl sm:text-2xl font-black text-white max-w-2xl">
-                  {activeLiveMaterial?.title || livePresentation?.materialTitle}
-                </h2>
+                return (
+                  <div className="w-full h-full bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col items-center justify-center text-center space-y-3 shadow-2xl relative overflow-y-auto">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-slate-800 rounded-full text-slate-300 text-xs font-bold border border-slate-700">
+                      <Tv className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>TAYANG PADA KOMPUTER SISWA • SLIDE {liveSlideNum} DARIPADA {livePresentation?.totalSlides || 10}</span>
+                    </div>
 
-                {activeLiveMaterial?.content ? (
-                  <div className="text-sm text-slate-200 max-w-3xl leading-relaxed text-left bg-slate-800/80 p-6 rounded-2xl border border-slate-700/80 shadow-inner">
-                    {activeLiveMaterial.content}
+                    <h2 className="text-xl sm:text-2xl font-black text-white max-w-2xl">
+                      {currentMat?.title || activeLiveMaterial?.title || livePresentation?.materialTitle}
+                    </h2>
+
+                    {embedUrl ? (
+                      <div className="w-full h-[55vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2">
+                        <iframe
+                          src={embedUrl}
+                          className="w-full h-full border-0"
+                          allow="autoplay; encrypted-media; picture-in-picture"
+                          allowFullScreen
+                          title="Media Presentasi"
+                        />
+                      </div>
+                    ) : isImg ? (
+                      <div className="max-w-3xl max-h-[55vh] overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2">
+                        <img src={currentUrl} alt="Slide Media" className="max-h-[50vh] object-contain mx-auto" />
+                      </div>
+                    ) : currentMat?.content ? (
+                      <div className="text-sm text-slate-200 max-w-3xl leading-relaxed text-left bg-slate-800/80 p-6 rounded-2xl border border-slate-700/80 shadow-inner overflow-y-auto max-h-[50vh]">
+                        {currentMat.content}
+                      </div>
+                    ) : (
+                      <div className="p-6 bg-slate-800/50 rounded-2xl border border-slate-700 text-slate-300 max-w-lg space-y-3">
+                        <p className="text-xs">
+                          Materi disinkronkan secara real-time ke seluruh layar komputer siswa yang login di lab.
+                        </p>
+                        {currentUrl && (
+                          <a
+                            href={currentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition"
+                          >
+                            <ExternalLink className="w-4 h-4" /> Buka Dokumen / Slide Sumber
+                          </a>
+                        )}
+                        <p className="text-[11px] text-amber-300 font-bold bg-amber-950/50 p-2.5 rounded-xl border border-amber-800/50">
+                          💡 Geser kursor di area ini untuk menggerakkan laser pointer merah pada komputer tiap siswa.
+                        </p>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="p-8 bg-slate-800/50 rounded-2xl border border-slate-700 text-slate-300 max-w-lg space-y-3">
-                    <p className="text-xs">
-                      Materi disinkronkan secara real-time ke seluruh layar komputer siswa yang login di lab.
-                    </p>
-                    <p className="text-[11px] text-amber-300 font-bold bg-amber-950/50 p-2.5 rounded-xl border border-amber-800/50">
-                      💡 Geser kursor di area ini untuk menggerakkan laser pointer merah pada komputer tiap siswa.
-                    </p>
-                  </div>
-                )}
-              </div>
+                );
+              })()}
             </div>
 
             {/* Controller Footer Toolbar */}

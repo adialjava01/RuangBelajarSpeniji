@@ -14,7 +14,7 @@ import {
 } from '../types';
 import { 
   Users, BookOpen, GraduationCap, Calendar, Plus, Trash2, Search, Upload, ShieldAlert, Award, ArrowUpRight, UserCheck, Clock, CheckCircle, XCircle, Edit, Settings, FileSpreadsheet, Download, ArrowRight, KeyRound, MonitorSmartphone, BarChart, TrendingUp, FileText
-, Send, ArrowLeft, Folder, X, Printer, Database, Save, RefreshCw, FileUp, FileDown, HardDrive, CheckCircle2, AlertTriangle, Layers, ShieldCheck, FileJson } from 'lucide-react';
+, Send, ArrowLeft, Folder, X, Printer, Database, Save, RefreshCw, FileUp, FileDown, HardDrive, CheckCircle2, AlertTriangle, Layers, ShieldCheck, FileJson, Square, CheckSquare } from 'lucide-react';
 
 interface AdminPanelProps {
   teachers: Teacher[];
@@ -697,13 +697,17 @@ export default function AdminPanel({
     classId: ''
   });
 
-  // States for student Excel/CSV Import and Bulk Promote
+  // States for student Excel/CSV Import and Per-Siswa Promotion / Shuffle
   const [showImportModal, setShowImportModal] = useState(false);
   const [importText, setImportText] = useState('');
   const [importPreview, setImportPreview] = useState<Array<{ name: string; nis: string; email: string; classId: string; className: string; noAbsen?: number; gender?: 'L' | 'P' }>>([]);
   const [showBulkPromoteModal, setShowBulkPromoteModal] = useState(false);
-  const [promoteFromClassId, setPromoteFromClassId] = useState('');
-  const [promoteToClassId, setPromoteToClassId] = useState('');
+  const [promoteFromClassFilter, setPromoteFromClassFilter] = useState('ALL');
+  const [promoteSearchQuery, setPromoteSearchQuery] = useState('');
+  const [studentDestMap, setStudentDestMap] = useState<Record<string, string>>({});
+  const [selectedPromoteStudentIds, setSelectedPromoteStudentIds] = useState<string[]>([]);
+  const [batchTargetClassId, setBatchTargetClassId] = useState('');
+  const [showSavePromoteConfirm, setShowSavePromoteConfirm] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, message: string, onConfirm: () => void}>({isOpen: false, message: '', onConfirm: () => {}});
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [deleteClassId, setDeleteClassId] = useState('');
@@ -1768,14 +1772,21 @@ export default function AdminPanel({
               </button>
               <button
                 onClick={() => {
-                  setPromoteFromClassId('');
-                  setPromoteToClassId(classes[1]?.id || 'LULUS');
+                  setPromoteFromClassFilter('ALL');
+                  setPromoteSearchQuery('');
+                  const initialMap: Record<string, string> = {};
+                  activeStudents.forEach(s => {
+                    initialMap[s.id] = s.classId;
+                  });
+                  setStudentDestMap(initialMap);
+                  setSelectedPromoteStudentIds([]);
+                  setBatchTargetClassId('');
                   setShowBulkPromoteModal(true);
                 }}
                 className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-3.5 py-2.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <ArrowRight className="w-4 h-4" />
-                <span>Naik Kelas / Lulus Masal</span>
+                <span>Naik / Acak Kelas Siswa (Per-Siswa)</span>
               </button>
               <button
                 onClick={() => {
@@ -4772,7 +4783,11 @@ export default function AdminPanel({
             <form onSubmit={(e) => {
               e.preventDefault();
               if (onUpdateStudent && editingStudent) {
-                onUpdateStudent(editingStudent);
+                const targetClassName = editingStudent.status === 'Lulus' ? 'Alumni' : getClassName(editingStudent.classId);
+                onUpdateStudent({
+                  ...editingStudent,
+                  className: targetClassName
+                });
                 toast(`Data siswa ${editingStudent.name} berhasil diperbarui!`);
                 setShowEditStudentModal(false);
               }
@@ -5259,114 +5274,424 @@ export default function AdminPanel({
           </div>
         </div>
       )}
-      {showBulkPromoteModal && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <GraduationCap className="w-5 h-5 text-amber-600" />
-                <h3 className="font-bold text-slate-900 text-base">Naik Kelas / Lulus Masal</h3>
-              </div>
-              <button 
-                onClick={() => setShowBulkPromoteModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
-              >
-                ✕
-              </button>
-            </div>
+      {showBulkPromoteModal && (() => {
+        const filteredPromoteStudents = activeStudents.filter(s => {
+          const matchesClass = promoteFromClassFilter === 'ALL' || s.classId === promoteFromClassFilter;
+          const matchesQuery = !promoteSearchQuery || 
+            (s.name || '').toLowerCase().includes(promoteSearchQuery.toLowerCase()) || 
+            (s.nis || '').includes(promoteSearchQuery);
+          return matchesClass && matchesQuery;
+        });
 
-            <p className="text-xs text-slate-500 leading-relaxed text-left font-medium">
-              Fitur ini memungkinkan Admin untuk memindahkan seluruh siswa dari satu kelas ke kelas tingkat berikutnya secara serentak pada akhir tahun ajaran, atau meluluskan siswa tingkat akhir.
-            </p>
+        const allFilteredSelected = filteredPromoteStudents.length > 0 && 
+          filteredPromoteStudents.every(s => selectedPromoteStudentIds.includes(s.id));
 
-            <div className="space-y-4 text-left bg-amber-50/50 p-4 rounded-xl border border-amber-100">
-              <div>
-                <label className="block text-xs font-bold mb-1 text-slate-700">Dari Kelas Asal:</label>
-                <select
-                  value={promoteFromClassId}
-                  onChange={(e) => setPromoteFromClassId(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-800 bg-white"
+        const toggleSelectAll = () => {
+          if (allFilteredSelected) {
+            setSelectedPromoteStudentIds(prev => prev.filter(id => !filteredPromoteStudents.some(s => s.id === id)));
+          } else {
+            const newIds = Array.from(new Set([...selectedPromoteStudentIds, ...filteredPromoteStudents.map(s => s.id)]));
+            setSelectedPromoteStudentIds(newIds);
+          }
+        };
+
+        const toggleSelectStudent = (id: string) => {
+          setSelectedPromoteStudentIds(prev => 
+            prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+          );
+        };
+
+        const handleApplyBatchTarget = () => {
+          if (!batchTargetClassId) {
+            toast.error('Pilih kelas tujuan terlebih dahulu!');
+            return;
+          }
+          if (selectedPromoteStudentIds.length === 0) {
+            toast.error('Pilih setidaknya 1 siswa untuk menerapkan kelas tujuan!');
+            return;
+          }
+
+          setStudentDestMap(prev => {
+            const next = { ...prev };
+            selectedPromoteStudentIds.forEach(id => {
+              next[id] = batchTargetClassId;
+            });
+            return next;
+          });
+
+          const targetClassObj = classes.find(c => c.id === batchTargetClassId);
+          const targetName = batchTargetClassId === 'LULUS' ? '🎓 Lulus / Alumni' : `Kelas ${targetClassObj?.name}`;
+          toast.success(`Berhasil mengatur tujuan ${selectedPromoteStudentIds.length} siswa terpilih ke ${targetName}`);
+        };
+
+        const changedStudentsCount = activeStudents.filter(s => {
+          const dest = studentDestMap[s.id];
+          return dest && dest !== s.classId;
+        }).length;
+
+        const graduatedCount = activeStudents.filter(s => studentDestMap[s.id] === 'LULUS').length;
+        const movedClassCount = changedStudentsCount - graduatedCount;
+
+        return (
+          <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fade-in">
+            <div className="bg-white rounded-3xl max-w-5xl w-full p-5 sm:p-6 shadow-2xl border border-slate-100 flex flex-col max-h-[92vh] overflow-hidden space-y-4">
+              
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-50 text-amber-600 rounded-2xl border border-amber-100">
+                    <GraduationCap className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 text-lg leading-snug">
+                      Kelola Kenaikan Kelas, Acak Kelas & Kelulusan Siswa (Per-Siswa)
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Atur kelas tujuan baru untuk setiap siswa secara acak/individual tanpa memutus histori data pembelajaran.
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowBulkPromoteModal(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
                 >
-                  <option value="">-- Pilih Kelas Asal --</option>
-                  {sortedClasses.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                  ✕
+                </button>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold mb-1 text-slate-700">Pindahkan / Naik Ke Kelas:</label>
-                <select
-                  value={promoteToClassId}
-                  onChange={(e) => setPromoteToClassId(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold text-indigo-700 bg-white"
-                >
-                  <option value="">-- Pilih Tujuan --</option>
-                  {sortedClasses.filter(c => c.id !== promoteFromClassId).map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                  <option value="LULUS" className="font-extrabold text-amber-700">🎓 Lulus / Alumni (Keluarkan dari Kelas Aktif)</option>
-                </select>
+              {/* Info Banner */}
+              <div className="bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200/80 text-xs text-amber-950 flex items-start gap-3 shrink-0">
+                <CheckCircle2 className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5 leading-relaxed">
+                  <p className="font-bold">Keamanan & Keutuhan Data Pembelajaran Terjamin:</p>
+                  <p className="text-amber-900">
+                    Memindahkan kelas atau meluluskan siswa per-siswa **TIDAK AKAN** menghapus/memutus data riwayat nilai, jurnal, ujian, tugas, maupun konseling BK dari Kelas 7, 8, hingga 9. ID Akun siswa tetap sama.
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {promoteFromClassId && (
-              <div className="text-left text-xs text-slate-600 font-medium">
-                Jumlah siswa yang akan diproses: <strong className="text-slate-900">{activeStudents.filter(s => s.classId === promoteFromClassId).length} Siswa</strong>
+              {/* Controls & Batch Action Bar */}
+              <div className="space-y-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 shrink-0">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+                  {/* Filter Kelas Asal */}
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                    <span className="text-xs font-bold text-slate-600 whitespace-nowrap">Kelas Asal:</span>
+                    <select
+                      value={promoteFromClassFilter}
+                      onChange={(e) => setPromoteFromClassFilter(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer w-full md:w-48"
+                    >
+                      <option value="ALL">Semua Kelas Asal ({activeStudents.length} Siswa)</option>
+                      {sortedClasses.map(c => {
+                        const count = activeStudents.filter(s => s.classId === c.id).length;
+                        return (
+                          <option key={c.id} value={c.id}>Kelas {c.name} ({count} Siswa)</option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {/* Search Student */}
+                  <div className="relative w-full md:w-72">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Cari nama atau NIS siswa..."
+                      value={promoteSearchQuery}
+                      onChange={(e) => setPromoteSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Batch Actions Bar */}
+                <div className="pt-2.5 border-t border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={toggleSelectAll}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {allFilteredSelected ? <CheckSquare className="w-4 h-4 text-amber-600" /> : <Square className="w-4 h-4 text-slate-400" />}
+                      <span>{allFilteredSelected ? 'Batal Pilih Semua' : 'Pilih Semua Terlihat'}</span>
+                    </button>
+                    <span className="text-xs font-semibold text-slate-500">
+                      Terpilih: <strong className="text-amber-700 font-extrabold">{selectedPromoteStudentIds.length}</strong> Siswa
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <select
+                      value={batchTargetClassId}
+                      onChange={(e) => setBatchTargetClassId(e.target.value)}
+                      className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="">-- Setel Kelas Tujuan Serentak --</option>
+                      {sortedClasses.map(c => (
+                        <option key={c.id} value={c.id}>Pindahkan ke Kelas {c.name}</option>
+                      ))}
+                      <option value="LULUS" className="font-extrabold text-amber-700">🎓 Setel Lulus / Alumni</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleApplyBatchTarget}
+                      disabled={selectedPromoteStudentIds.length === 0 || !batchTargetClassId}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold text-white transition shadow-xs whitespace-nowrap cursor-pointer ${
+                        selectedPromoteStudentIds.length === 0 || !batchTargetClassId
+                          ? 'bg-slate-300 cursor-not-allowed'
+                          : 'bg-indigo-600 hover:bg-indigo-700'
+                      }`}
+                    >
+                      Terapkan
+                    </button>
+                  </div>
+                </div>
               </div>
-            )}
 
-            <div className="border-t border-slate-100 pt-3 flex justify-end gap-2 text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setShowBulkPromoteModal(false)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                disabled={activeStudents.filter(s => s.classId === promoteFromClassId).length === 0 || promoteToClassId === ''}
-                onClick={() => {
-                  const targetStudents = activeStudents.filter(s => s.classId === promoteFromClassId);
-                  if (targetStudents.length === 0) return;
+              {/* Student Table List */}
+              <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl custom-scrollbar min-h-48">
+                {filteredPromoteStudents.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 font-medium text-xs">
+                    Tidak ada siswa ditemukan berdasarkan filter.
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="bg-slate-100/80 text-slate-700 font-extrabold sticky top-0 z-10 border-b border-slate-200">
+                      <tr>
+                        <th className="p-3 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={allFilteredSelected}
+                            onChange={toggleSelectAll}
+                            className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                          />
+                        </th>
+                        <th className="p-3 w-12 text-center">No</th>
+                        <th className="p-3">Nama Siswa & NIS</th>
+                        <th className="p-3 w-28 text-center">Kelas Asal</th>
+                        <th className="p-3 w-64">Pilih Kelas Tujuan Baru</th>
+                        <th className="p-3 w-36 text-center">Status Perubahan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {filteredPromoteStudents.map((s, idx) => {
+                        const isChecked = selectedPromoteStudentIds.includes(s.id);
+                        const currentClassName = getClassName(s.classId);
+                        const targetClassId = studentDestMap[s.id] || s.classId;
+                        const isGraduating = targetClassId === 'LULUS';
+                        const isMoved = targetClassId !== s.classId;
+                        const targetClassObj = classes.find(c => c.id === targetClassId);
 
-                  const targetClassObj = classes.find(c => c.id === promoteToClassId);
-                  const actionName = promoteToClassId === 'LULUS' ? 'meluluskan' : `menaikkan kelas ke ${targetClassObj?.name}`;
+                        return (
+                          <tr 
+                            key={s.id} 
+                            className={`hover:bg-amber-50/40 transition ${
+                              isChecked ? 'bg-amber-50/60' : ''
+                            } ${isMoved ? 'bg-emerald-50/20' : ''}`}
+                          >
+                            <td className="p-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleSelectStudent(s.id)}
+                                className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                              />
+                            </td>
+                            <td className="p-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                            <td className="p-3">
+                              <div className="font-extrabold text-slate-900 text-xs">{s.name}</div>
+                              <div className="text-[11px] text-slate-500 font-mono">
+                                NIS: {s.nis} {s.gender ? `• (${s.gender})` : ''}
+                              </div>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className="bg-slate-100 border border-slate-200 text-slate-700 font-extrabold px-2.5 py-1 rounded-lg text-[11px]">
+                                {currentClassName}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <select
+                                value={targetClassId}
+                                onChange={(e) => setStudentDestMap(prev => ({ ...prev, [s.id]: e.target.value }))}
+                                className={`w-full px-3 py-1.5 border rounded-xl text-xs font-bold outline-none cursor-pointer transition ${
+                                  isGraduating 
+                                    ? 'bg-amber-50 border-amber-300 text-amber-900 font-extrabold' 
+                                    : isMoved 
+                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-extrabold' 
+                                    : 'bg-white border-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {sortedClasses.map(c => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.id === s.classId ? `[Kelas Saat Ini] Kelas ${c.name}` : `→ Pindahkan ke Kelas ${c.name}`}
+                                  </option>
+                                ))}
+                                <option value="LULUS" className="font-extrabold text-amber-700">🎓 Setel Lulus / Alumni</option>
+                              </select>
+                            </td>
+                            <td className="p-3 text-center">
+                              {isGraduating ? (
+                                <span className="bg-amber-100 text-amber-800 border border-amber-200 font-extrabold px-2.5 py-1 rounded-lg text-[10px] inline-flex items-center gap-1">
+                                  🎓 Lulus (Alumni)
+                                </span>
+                              ) : isMoved ? (
+                                <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 font-extrabold px-2.5 py-1 rounded-lg text-[10px] inline-flex items-center gap-1">
+                                  → Kelas {targetClassObj?.name || 'Baru'}
+                                </span>
+                              ) : (
+                                <span className="bg-slate-100 text-slate-500 font-bold px-2 py-0.5 rounded text-[10px]">
+                                  Tetap
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
 
-                  setConfirmModal({
-                    isOpen: true,
-                    message: `Anda yakin ingin ${actionName} untuk ${targetStudents.length} siswa ini?`,
-                    onConfirm: () => {
-                      if (promoteToClassId === 'LULUS') {
-                        if (onUpdateStudent) {
-                          targetStudents.forEach(s => onUpdateStudent({...s, status: 'Lulus'}));
-                        }
-                        toast(`Berhasil meluluskan / mengalihkan ${targetStudents.length} siswa ke status Alumni.`);
-                      } else {
-                        if (onUpdateStudent) {
-                          targetStudents.forEach(s => {
-                            onUpdateStudent({ ...s, classId: promoteToClassId });
-                          });
-                        }
-                        toast(`Berhasil menaikkan kelas ${targetStudents.length} siswa ke ${targetClassObj?.name}!`);
+              {/* Footer Summary & Save */}
+              <div className="border-t border-slate-100 pt-3 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2 text-xs flex-wrap">
+                  <span className="font-bold text-slate-600">Ringkasan Aksi:</span>
+                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-extrabold px-2.5 py-1 rounded-lg text-[11px]">
+                    Naik/Pindah: {movedClassCount} Siswa
+                  </span>
+                  <span className="bg-amber-50 text-amber-800 border border-amber-200 font-extrabold px-2.5 py-1 rounded-lg text-[11px]">
+                    Lulus: {graduatedCount} Siswa
+                  </span>
+                  <span className="bg-slate-100 text-slate-600 font-bold px-2.5 py-1 rounded-lg text-[11px]">
+                    Tetap: {activeStudents.length - changedStudentsCount} Siswa
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs font-bold w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkPromoteModal(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    disabled={changedStudentsCount === 0}
+                    onClick={() => {
+                      const changedStudents = activeStudents.filter(s => {
+                        const dest = studentDestMap[s.id];
+                        return dest && dest !== s.classId;
+                      });
+
+                      if (changedStudents.length === 0) {
+                        toast.error('Tidak ada perubahan kelas/status siswa.');
+                        return;
                       }
-                      setShowBulkPromoteModal(false);
-                    }
-                  });
-                }}
-                className={`px-4 py-2 rounded-lg transition cursor-pointer text-white shadow-xs ${
-                  activeStudents.filter(s => s.classId === promoteFromClassId).length === 0
-                    ? 'bg-slate-300 cursor-not-allowed'
-                    : 'bg-amber-600 hover:bg-amber-700'
-                }`}
-              >
-                Proses Perpindahan Masal
-              </button>
+
+                      setShowSavePromoteConfirm(true);
+                    }}
+                    className={`px-5 py-2.5 rounded-xl transition cursor-pointer text-white shadow-md flex items-center gap-2 ${
+                      changedStudentsCount === 0
+                        ? 'bg-slate-300 cursor-not-allowed'
+                        : 'bg-amber-600 hover:bg-amber-700 shadow-amber-200'
+                    }`}
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Simpan Perubahan Kelas ({changedStudentsCount} Siswa Berubah)</span>
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* CONFIRMATION MODAL FOR SAVING PER-STUDENT CLASS PROMOTIONS */}
+      {showSavePromoteConfirm && (() => {
+        const changedStudents = activeStudents.filter(s => {
+          const dest = studentDestMap[s.id];
+          return dest && dest !== s.classId;
+        });
+        const graduatedCount = changedStudents.filter(s => studentDestMap[s.id] === 'LULUS').length;
+        const movedCount = changedStudents.length - graduatedCount;
+
+        return (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-[70] animate-fade-in">
+            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4 text-center">
+              <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner border border-amber-200">
+                <GraduationCap className="w-8 h-8" />
+              </div>
+              
+              <div className="space-y-1">
+                <h3 className="font-extrabold text-slate-900 text-lg">Konfirmasi Pemindahan / Kenaikan Kelas</h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Anda akan memperbarui penempatan kelas untuk <strong className="text-slate-900 font-extrabold">{changedStudents.length} siswa</strong>.
+                </p>
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs text-left space-y-2 font-medium">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">Naik / Pindah Kelas:</span>
+                  <span className="font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">{movedCount} Siswa</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">Setel Lulus (Alumni):</span>
+                  <span className="font-extrabold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-200">{graduatedCount} Siswa</span>
+                </div>
+                <div className="flex justify-between items-center pt-1 border-t border-slate-200 text-[11px]">
+                  <span className="text-slate-500">Histori Pembelajaran (Jurnal, Nilai, BK):</span>
+                  <span className="font-extrabold text-indigo-700">Tetap Utuh</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setShowSavePromoteConfirm(false)}
+                  className="w-1/2 py-2.5 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onUpdateStudent) {
+                      changedStudents.forEach(s => {
+                        const dest = studentDestMap[s.id];
+                        if (dest === 'LULUS') {
+                          onUpdateStudent({
+                            ...s,
+                            status: 'Lulus',
+                            className: 'Alumni'
+                          });
+                        } else {
+                          const targetClassObj = classes.find(c => c.id === dest);
+                          onUpdateStudent({
+                            ...s,
+                            classId: dest,
+                            className: targetClassObj?.name || getClassName(dest),
+                            status: 'Aktif'
+                          });
+                        }
+                      });
+                    }
+
+                    toast.success(`Berhasil memperbarui kelas & status ${changedStudents.length} siswa! Data riwayat pembelajaran tersimpan utuh.`);
+                    setShowSavePromoteConfirm(false);
+                    setShowBulkPromoteModal(false);
+                  }}
+                  className="w-1/2 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition cursor-pointer shadow-md shadow-amber-200 flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Ya, Simpan
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-[60] animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-sm w-full p-6 text-center space-y-4">

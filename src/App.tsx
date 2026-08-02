@@ -2,7 +2,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import React, { useState, useEffect } from 'react';
 import { 
   Teacher, Student, ClassItem, SubjectItem, Material, JournalEntry, Exam, CheatLog, ExamSubmission, TeacherAnnouncement, RegistrationRequest, SchoolConfig, QuestionBank, ShareRequest, GlobalAnnouncement, TeacherScheduleNote, TeachingModule, ManualAssessment, CounselingReferral, CounselingSession 
-, DailyCheckIn, NeedsAssessment, Sociometry, HomeVisit, CareerPlan, AssignmentFolder, AssignmentSubmission } from './types';
+, DailyCheckIn, NeedsAssessment, Sociometry, HomeVisit, CareerPlan, AssignmentFolder, AssignmentSubmission, LivePresentationSession } from './types';
 import AdminPanel from './components/AdminPanel';
 import TeacherPanel from './components/TeacherPanel';
 import StudentPanel from './components/StudentPanel';
@@ -295,6 +295,7 @@ export default function App() {
   const [scheduleNotes, setScheduleNotes] = useState<TeacherScheduleNote[]>([]);
   const [assignmentFolders, setAssignmentFolders] = useState<AssignmentFolder[]>([]);
   const [assignmentSubmissions, setAssignmentSubmissions] = useState<AssignmentSubmission[]>([]);
+  const [livePresentation, setLivePresentation] = useState<LivePresentationSession | undefined>(undefined);
 
   // Portal Tab & Registration Form states
   const [portalTab, setPortalTab] = useState<'login' | 'register'>('login');
@@ -338,8 +339,10 @@ export default function App() {
     const unsubAssignmentFolders = syncCollection('assignmentFolders', setAssignmentFolders, []);
     const unsubAssignmentSubmissions = syncCollection('assignmentSubmissions', setAssignmentSubmissions, []);
     const unsubSchoolConfig = syncConfig('schoolConfig', setSchoolConfig, DEFAULT_SCHOOL_CONFIG);
+    const unsubLivePresentation = syncConfig<LivePresentationSession | undefined>('livePresentation', setLivePresentation, undefined);
 
     return () => {
+      unsubLivePresentation();
       unsubAssignmentFolders();
       unsubAssignmentSubmissions();
       unsubScheduleNotes();
@@ -373,6 +376,11 @@ export default function App() {
   // --- DB OPERATIONAL PERSISTENCE HELPERS ---
   const saveSchoolConfigState = (updated: SchoolConfig) => {
     saveConfig('schoolConfig', updated);
+  };
+
+  const handleUpdateLivePresentation = (session: LivePresentationSession) => {
+    setLivePresentation(session);
+    saveConfig('livePresentation', session);
   };
 
   const handleRegisterAccount = (e: React.FormEvent) => {
@@ -1434,6 +1442,8 @@ export default function App() {
                 onDeleteAssignmentFolder={handleDeleteAssignmentFolder}
                 onUpdateAssignmentSubmission={handleUpdateAssignmentSubmission}
                 onDeleteAssignmentSubmission={handleDeleteAssignmentSubmission}
+                livePresentation={livePresentation}
+                onUpdateLivePresentation={handleUpdateLivePresentation}
               />
             )}
 
@@ -1485,6 +1495,8 @@ export default function App() {
                 assignmentFolders={assignmentFolders}
                 assignmentSubmissions={assignmentSubmissions}
                 onSaveAssignmentSubmission={handleSaveAssignmentSubmission}
+                livePresentation={livePresentation}
+                onUpdateLivePresentation={handleUpdateLivePresentation}
               />
             )}
 
