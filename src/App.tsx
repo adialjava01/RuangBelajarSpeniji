@@ -256,6 +256,10 @@ const SEED_REGISTRATIONS: RegistrationRequest[] = [
 ];
 
 export default function App() {
+  useEffect(() => {
+    document.title = 'Ruang Belajar SPENIJI';
+  }, []);
+
   // Navigation State
   const [activeMode, setActiveMode] = useState<'app' | 'gas'>('app');
   
