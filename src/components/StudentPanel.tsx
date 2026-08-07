@@ -2,11 +2,12 @@ import toast from 'react-hot-toast';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Student, Material, Exam, ExamQuestion, ExamSubmission, CheatLog, Teacher, SubjectItem, TeacherAnnouncement
-, DailyCheckIn, NeedsAssessment, Sociometry, ClassItem, CareerPlan, AssignmentFolder, AssignmentSubmission, LivePresentationSession } from '../types';
+, DailyCheckIn, NeedsAssessment, Sociometry, ClassItem, CareerPlan, AssignmentFolder, AssignmentSubmission, LivePresentationSession, ManualAssessment, SchoolConfig } from '../types';
 import { 
   BookOpen, FileText, Key, Clock, AlertTriangle, CheckCircle, ShieldAlert, Sparkles, Send, User, GraduationCap,
-  Bell, Megaphone, CheckCircle2, Info, X
-, Heart, MessageSquare, Users, Briefcase, Folder, ExternalLink, Upload, FolderPlus, Tv, Radio, Eye, Download, Maximize2, Minimize2, ZoomIn, ZoomOut, Lock, Unlock, Paperclip, FileCheck, Play, Volume2, Image as ImageIcon, Link as LinkIcon, File, RotateCw, Smartphone } from 'lucide-react';
+  Bell, Megaphone, CheckCircle2, Info, X, ChevronLeft, ChevronRight, Grid, AlertOctagon
+, Heart, MessageSquare, Users, Briefcase, Folder, ExternalLink, Upload, FolderPlus, Tv, Radio, Eye, Download, Maximize2, Minimize2, ZoomIn, ZoomOut, Lock, Unlock, Paperclip, FileCheck, Play, Volume2, Image as ImageIcon, Link as LinkIcon, File, RotateCw, Smartphone, Printer, Filter } from 'lucide-react';
+import { analyzeDriveUrl } from '../utils/gdrive';
 
 interface StudentPanelProps {
   dailyCheckIns?: DailyCheckIn[];
@@ -32,6 +33,8 @@ interface StudentPanelProps {
   onSubmitExam: (submission: Omit<ExamSubmission, 'id' | 'submittedAt'>) => void;
   assignmentFolders?: AssignmentFolder[];
   assignmentSubmissions?: AssignmentSubmission[];
+  manualAssessments?: ManualAssessment[];
+  schoolConfig?: SchoolConfig;
   onSaveAssignmentSubmission?: (sub: Omit<AssignmentSubmission, 'id' | 'submittedAt'>) => void;
   livePresentation?: LivePresentationSession;
   livePresentations?: LivePresentationSession[];
@@ -117,6 +120,8 @@ export default function StudentPanel({
   onSubmitExam,
   assignmentFolders = [],
   assignmentSubmissions = [],
+  manualAssessments = [],
+  schoolConfig,
   onSaveAssignmentSubmission,
   livePresentation: rawLivePresentation,
   livePresentations,
@@ -402,6 +407,11 @@ export default function StudentPanel({
   const [showCheatModal, setShowCheatModal] = useState(false);
   const [studentAnswers, setStudentAnswers] = useState<{ [qId: string]: any }>({});
   
+  // CBT Paginated & Navigation State
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+  const [doubtfulQuestions, setDoubtfulQuestions] = useState<Record<string, boolean>>({});
+  const [showConfirmSubmitModal, setShowConfirmSubmitModal] = useState<boolean>(false);
+  
   // Submit exam state
   const [scoreResult, setScoreResult] = useState<{
     score: number;
@@ -606,7 +616,44 @@ export default function StudentPanel({
     setCheatingAttempts(0);
     setStudentAnswers({});
     setScoreResult(null);
+    setCurrentQuestionIndex(0);
+    setDoubtfulQuestions({});
+    setShowConfirmSubmitModal(false);
     toast.success(`Selamat mengerjakan ${exam.title}!`);
+  };
+
+  const toggleDoubtful = (qId: string) => {
+    setDoubtfulQuestions(prev => ({
+      ...prev,
+      [qId]: !prev[qId]
+    }));
+  };
+
+  const checkQuestionAnswered = (q: ExamQuestion) => {
+    const ans = studentAnswers[q.id];
+    if (ans === undefined || ans === null) return false;
+    if (typeof ans === 'string') return ans.trim() !== '';
+    if (Array.isArray(ans)) return ans.length > 0;
+    if (typeof ans === 'number') return true;
+    if (typeof ans === 'boolean') return true;
+    return false;
+  };
+
+  const getExamSummaryStats = () => {
+    if (!activeExam) return { total: 0, answered: 0, doubtful: 0, unanswered: 0 };
+    const total = activeExam.questions.length;
+    let answered = 0;
+    let doubtful = 0;
+
+    activeExam.questions.forEach(q => {
+      const isAns = checkQuestionAnswered(q);
+      const isDoubt = Boolean(doubtfulQuestions[q.id]);
+      if (isDoubt) doubtful++;
+      if (isAns) answered++;
+    });
+
+    const unanswered = Math.max(0, total - answered);
+    return { total, answered, doubtful, unanswered };
   };
 
   const handleSelectAnswer = (qId: string, answer: any) => {
@@ -701,10 +748,10 @@ export default function StudentPanel({
           break;
 
         case 'Uraian':
-          if (studentAns && String(studentAns).trim() !== '') {
-            isCorrect = true; // For now, assume filled means "answered" (grading can be manual later)
-            pointsEarned = 1; // Or partial score
-          }
+          // Uraian questions require manual teacher grading.
+          // Initial auto-score is 0 until teacher manually evaluates and approves points.
+          isCorrect = false;
+          pointsEarned = 0;
           break;
       }
 
@@ -716,10 +763,13 @@ export default function StudentPanel({
         questionId: q.id,
         studentAnswer: studentAns,
         isCorrect: isCorrect,
-        pointsEarned: pointsEarned
+        pointsEarned: pointsEarned,
+        essayScore: 0,
+        teacherNote: ''
       });
     });
 
+    const hasEssayQuestions = activeExam.questions.some(q => q.type === 'Uraian');
     const finalScore = Math.round((totalPoints / maxPoints) * 100) || 0;
 
     // Send to main app spreadsheet storage
@@ -731,7 +781,8 @@ export default function StudentPanel({
       className: currentStudent.className || 'Kelas VII-A',
       score: finalScore,
       answers: evaluatedAnswers,
-      cheatingAttempts: cheatingAttempts
+      cheatingAttempts: cheatingAttempts,
+      essayGraded: !hasEssayQuestions
     });
 
     setScoreResult({
@@ -2111,6 +2162,11 @@ export default function StudentPanel({
                   toast.error('Masukkan URL / Link Google Drive tugas Anda!');
                   return;
                 }
+                const driveAnalysis = analyzeDriveUrl(submitFileUrl);
+                if (!driveAnalysis.isValid) {
+                  toast.error('Format URL tidak valid! Pastikan diawali dengan http:// atau https://');
+                  return;
+                }
               }
 
               if (onSaveAssignmentSubmission) {
@@ -2267,6 +2323,40 @@ export default function StudentPanel({
                       onChange={(e) => setSubmitFileUrl(e.target.value)}
                       className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-mono font-bold text-blue-700 focus:ring-2 focus:ring-emerald-500"
                     />
+
+                    {(() => {
+                      if (!submitFileUrl.trim()) return null;
+                      const driveInfo = analyzeDriveUrl(submitFileUrl);
+                      return (
+                        <div className={`mt-2 p-3 rounded-xl border text-xs space-y-1.5 ${driveInfo.colorClass}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold flex items-center gap-1.5">
+                              {driveInfo.isValid ? (
+                                <CheckCircle className="w-4 h-4 text-emerald-600" />
+                              ) : (
+                                <AlertTriangle className="w-4 h-4 text-rose-600" />
+                              )}
+                              {driveInfo.label}
+                            </span>
+                            {driveInfo.isValid && (
+                              <a
+                                href={submitFileUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-[10px] rounded-lg flex items-center gap-1 cursor-pointer"
+                              >
+                                <ExternalLink className="w-3 h-3" /> Uji Buka Link
+                              </a>
+                            )}
+                          </div>
+                          {driveInfo.warningNote && (
+                            <p className="text-[11px] font-medium leading-normal bg-white/80 p-2 rounded-lg border border-slate-200/50">
+                              ⚠️ {driveInfo.warningNote}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -2408,6 +2498,10 @@ export default function StudentPanel({
                       const mySub = (submissions || []).find(sub => sub.studentNis === currentStudent.nis && sub.examId === exam.id);
                       const cardTokenInput = tokenInputs[exam.id] ?? tokenInput ?? '';
                       const cardTokenError = tokenErrors[exam.id] ?? tokenError ?? '';
+                      const hasEssayQuestions = exam.questions.some(q => q.type === 'Uraian');
+                      const showScore = !hasEssayQuestions
+                        ? (exam.showScoreToStudent !== false)
+                        : (mySub?.essayGraded === true && exam.showScoreToStudent !== false);
 
                       return (
                         <div className="space-y-3">
@@ -2415,11 +2509,21 @@ export default function StudentPanel({
                             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between text-xs text-emerald-900 font-bold">
                               <span className="flex items-center gap-1.5">
                                 <CheckCircle className="w-4 h-4 text-emerald-600" />
-                                Sudah dikerjakan
+                                Sudah Dikerjakan
                               </span>
-                              <span className="bg-emerald-200 text-emerald-950 px-2.5 py-0.5 rounded-full font-black">
-                                Nilai: {mySub.score}
-                              </span>
+                              {hasEssayQuestions && !mySub.essayGraded ? (
+                                <span className="bg-amber-100 text-amber-900 border border-amber-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+                                  Proses Koreksi Guru
+                                </span>
+                              ) : showScore ? (
+                                <span className="bg-emerald-200 text-emerald-950 px-2.5 py-0.5 rounded-full font-black">
+                                  Nilai: {mySub.score}
+                                </span>
+                              ) : (
+                                <span className="bg-emerald-100/90 text-emerald-800 border border-emerald-200/60 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+                                  Jawaban Tersimpan
+                                </span>
+                              )}
                             </div>
                           )}
 
@@ -2480,361 +2584,598 @@ export default function StudentPanel({
 
       {/* CORE CBT EXAM RUNNING VIEW */}
       {examStarted && activeExam && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start select-none">
-          {/* LEFT SIDE - QUESTIONS & INPUTS */}
-          <div className="lg:col-span-8 bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-              <h3 className="font-extrabold text-slate-900 text-base">{activeExam.title}</h3>
-              <span className="text-xs bg-red-50 text-red-700 font-bold px-2.5 py-1 rounded-full flex items-center gap-1 border border-red-100 animate-pulse">
-                <ShieldAlert className="w-4 h-4 text-red-600" /> Anti-Contek Aktif
-              </span>
+        <div className="space-y-4 select-none pb-12">
+          {/* TOP CBT HEADER BANNER (MATCHING USER REFERENCE DESIGN) */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-lg border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-600/30 border border-indigo-400/30 flex items-center justify-center shrink-0 shadow-inner">
+                <GraduationCap className="w-6 h-6 text-indigo-300" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black tracking-widest text-indigo-300 uppercase block">LEMBAR UJIAN & EVALUASI CBT</span>
+                <h2 className="text-base sm:text-lg font-black text-white leading-tight">{activeExam.title}</h2>
+              </div>
             </div>
 
-            {/* Questions loop */}
-            <div className="space-y-8">
-              {activeExam.questions.map((q, idx) => {
+            <div className="flex items-center gap-3 self-end sm:self-auto shrink-0 bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700/60">
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 block font-medium">Selamat datang,</span>
+                <span className="text-xs font-black text-slate-100 block">{currentStudent.name}</span>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black text-xs border border-indigo-400/40">
+                {currentStudent.name ? currentStudent.name.charAt(0).toUpperCase() : 'S'}
+              </div>
+            </div>
+          </div>
+
+          {/* CHEATING ALERT IF ANY */}
+          {cheatingAttempts > 0 && (
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-700 text-xs font-extrabold rounded-xl flex items-center gap-2 animate-pulse">
+              <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>PERINGATAN: Sistem mendeteksi Anda meninggalkan halaman/tab ujian sebanyak {cheatingAttempts} kali!</span>
+            </div>
+          )}
+
+          {/* MAIN 2-COLUMN CBT CONTAINER */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            
+            {/* LEFT COLUMN: QUESTION CONTENT & NAVIGATION (lg:col-span-8) */}
+            <div className="lg:col-span-8 space-y-4">
+              {(() => {
+                const totalQuestions = activeExam.questions.length;
+                const safeIndex = Math.min(Math.max(0, currentQuestionIndex), totalQuestions - 1);
+                const q = activeExam.questions[safeIndex];
+
+                if (!q) return <div className="p-8 bg-white rounded-2xl text-center">Soal tidak ditemukan.</div>;
+
+                const isCurrentDoubtful = Boolean(doubtfulQuestions[q.id]);
+
                 return (
-                  <div key={q.id} className="space-y-4 border-b border-slate-100 pb-6 last:border-b-0">
-                    <div className="flex items-start gap-2.5">
-                      <span className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center font-extrabold text-xs flex-shrink-0 mt-0.5">
-                        {idx + 1}
-                      </span>
-                      <div className="space-y-1.5 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] bg-slate-100 font-bold px-2 py-0.5 rounded text-slate-600">
-                            {q.type === 'PilihanGanda' ? 'Pilihan Ganda Standar' :
-                             q.type === 'PilihanGandaKompleks' ? 'Pilihan Ganda Kompleks (Multi)' :
-                             q.type === 'PilihanAsosiatif' ? 'Pilihan Asosiatif (1,2,3,4)' :
-                             'Pilihan Sebab-Akibat'}
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden space-y-0">
+                    
+                    {/* QUESTION CARD TOP HEADER BAR */}
+                    <div className="bg-slate-50 border-b border-slate-200 p-4 sm:px-6 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-500">SOAL NO.</span>
+                        <span className="px-3 py-1 bg-indigo-600 text-white font-black text-sm rounded-lg shadow-2xs">
+                          {safeIndex + 1}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-medium ml-1">
+                          (dari {totalQuestions} Soal)
+                        </span>
+                      </div>
+
+                      {/* TIMER BADGE */}
+                      <div className="flex items-center bg-slate-200/80 rounded-xl overflow-hidden border border-slate-300/80 shadow-2xs">
+                        <span className="px-2.5 py-1 text-[11px] font-black text-slate-600 uppercase tracking-wider bg-slate-200">
+                          SISA WAKTU
+                        </span>
+                        <span className="px-3 py-1 text-xs sm:text-sm font-mono font-black text-indigo-900 bg-white">
+                          {formatTime(timerSeconds)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* QUESTION BODY CONTAINER */}
+                    <div className="p-5 sm:p-7 space-y-6 min-h-[320px]">
+                      
+                      {/* TYPE & SCORE BADGES */}
+                      <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                        <span className="text-[11px] bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-md border border-slate-200/80">
+                          {q.type === 'PilihanGanda' ? 'Pilihan Ganda Standar' :
+                           q.type === 'PilihanGandaKompleks' ? 'Pilihan Ganda Kompleks (Jawaban Jamak)' :
+                           q.type === 'PilihanAsosiatif' ? 'Pilihan Asosiatif (1, 2, 3, 4)' :
+                           q.type === 'SebabAkibat' ? 'Pilihan Sebab - Akibat' :
+                           'Soal Uraian / Essay'}
+                        </span>
+                        {q.score !== undefined && (
+                          <span className="text-[11px] bg-emerald-50 text-emerald-800 font-bold px-2.5 py-1 rounded-md border border-emerald-200">
+                            Bobot: {q.score} Poin
                           </span>
-                          {q.score !== undefined && (
-                            <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded border border-emerald-100">
-                              Bobot Skor: {q.score}
-                            </span>
+                        )}
+                      </div>
+
+                      {/* QUESTION TEXT STIMULUS */}
+                      <div className="text-slate-900 text-sm sm:text-base leading-relaxed font-medium">
+                        {renderFormattedText(q.questionText, q.fontPreset)}
+                      </div>
+
+                      {/* MEDIA ATTACHMENTS (Image, Video, Audio) */}
+                      {q.mediaType && q.mediaType !== 'None' && q.mediaUrl && (
+                        <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl max-w-lg mx-auto">
+                          {q.mediaType === 'Image' && (
+                            <img 
+                              src={q.mediaUrl} 
+                              alt="Stimulus Soal" 
+                              className="rounded-xl max-h-72 object-contain mx-auto border bg-white shadow-2xs"
+                              referrerPolicy="no-referrer"
+                            />
+                          )}
+                          {q.mediaType === 'Video' && (
+                            <div className="aspect-video w-full rounded-xl overflow-hidden border bg-black shadow-2xs">
+                              <iframe
+                                src={q.mediaUrl.includes('youtube.com/watch') 
+                                  ? q.mediaUrl.replace('watch?v=', 'embed/') 
+                                  : q.mediaUrl}
+                                title="Video Stimulus Soal"
+                                className="w-full h-full border-0"
+                                allowFullScreen
+                              />
+                            </div>
+                          )}
+                          {q.mediaType === 'Audio' && (
+                            <div className="p-3 bg-white rounded-xl border border-slate-200">
+                              <audio 
+                                src={q.mediaUrl} 
+                                controls 
+                                className="w-full"
+                              />
+                            </div>
                           )}
                         </div>
-                        <div className="text-slate-900 text-sm mt-1.5">
-                          {renderFormattedText(q.questionText, q.fontPreset)}
-                        </div>
-                        
-                        {/* RENDERING EMBEDDED MEDIA (Gambar, Video, Suara) */}
-                        {q.mediaType && q.mediaType !== 'None' && q.mediaUrl && (
-                          <div className="mt-3 max-w-full sm:max-w-md bg-slate-50 border border-slate-200/50 p-2 rounded-2xl">
-                            {q.mediaType === 'Image' && (
-                              <img 
-                                src={q.mediaUrl} 
-                                alt="Stimulus Soal" 
-                                className="rounded-xl max-h-64 object-contain mx-auto border bg-white"
-                                referrerPolicy="no-referrer"
-                              />
-                            )}
-                            {q.mediaType === 'Video' && (
-                              <div className="aspect-video w-full rounded-xl overflow-hidden border bg-black">
-                                <iframe
-                                  src={q.mediaUrl.includes('youtube.com/watch') 
-                                    ? q.mediaUrl.replace('watch?v=', 'embed/') 
-                                    : q.mediaUrl}
-                                  title="Video Stimulus Soal"
-                                  className="w-full h-full border-0"
-                                  allowFullScreen
-                                />
+                      )}
+
+                      {/* ANSWER OPTIONS RENDERING BY QUESTION TYPE */}
+                      <div className="pt-2">
+                        {q.type === 'PilihanGanda' && (
+                          <div className="space-y-3 text-xs sm:text-sm font-semibold">
+                            {q.options.map((opt, oIdx) => {
+                              const optionLetter = String.fromCharCode(65 + oIdx);
+                              const isSelected = studentAnswers[q.id] === optionLetter;
+                              return (
+                                <button
+                                  key={oIdx}
+                                  type="button"
+                                  onClick={() => handleSelectAnswer(q.id, optionLetter)}
+                                  className={`w-full p-3.5 sm:p-4 rounded-xl border text-left transition cursor-pointer flex items-center gap-3.5 ${
+                                    isSelected 
+                                      ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-extrabold shadow-2xs ring-1 ring-indigo-500' 
+                                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                                  }`}
+                                >
+                                  <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs border font-black shrink-0 transition ${
+                                    isSelected 
+                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' 
+                                      : 'bg-slate-100 text-slate-600 border-slate-300'
+                                  }`}>
+                                    {optionLetter}
+                                  </span>
+                                  <span className="leading-snug">{opt}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {q.type === 'PilihanGandaKompleks' && (
+                          <div className="space-y-3 text-xs sm:text-sm font-semibold">
+                            {q.options.map((opt, oIdx) => {
+                              const currentSelection = (studentAnswers[q.id] as string[]) || [];
+                              const isSelected = currentSelection.includes(opt);
+                              return (
+                                <button
+                                  key={oIdx}
+                                  type="button"
+                                  onClick={() => handleSelectMultipleAnswer(q.id, opt, !isSelected)}
+                                  className={`w-full p-3.5 sm:p-4 rounded-xl border text-left transition cursor-pointer flex items-center gap-3.5 ${
+                                    isSelected 
+                                      ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-extrabold shadow-2xs ring-1 ring-indigo-500' 
+                                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                                  }`}
+                                >
+                                  <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs border font-black shrink-0 transition ${
+                                    isSelected 
+                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' 
+                                      : 'bg-slate-100 text-slate-500 border-slate-300'
+                                  }`}>
+                                    {isSelected ? '✓' : ''}
+                                  </span>
+                                  <span className="leading-snug">{opt}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {q.type === 'PilihanAsosiatif' && (
+                          <div className="space-y-4">
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs text-slate-700 space-y-2">
+                              <p className="font-extrabold text-slate-800">Simulasikan Pilihan Kombinasi Pernyataan Anda:</p>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-semibold">
+                                {q.statements.map((st, sIdx) => {
+                                  const currentSelectedCombination = (studentAnswers[`aso_helper_${q.id}`] as number[]) || [];
+                                  const isChecked = currentSelectedCombination.includes(sIdx + 1);
+
+                                  const toggleVal = () => {
+                                    let nextCombination: number[];
+                                    if (isChecked) {
+                                      nextCombination = currentSelectedCombination.filter(v => v !== sIdx + 1);
+                                    } else {
+                                      nextCombination = [...currentSelectedCombination, sIdx + 1].sort();
+                                    }
+                                    handleSelectAnswer(`aso_helper_${q.id}`, nextCombination);
+                                    
+                                    const has1 = nextCombination.includes(1);
+                                    const has2 = nextCombination.includes(2);
+                                    const has3 = nextCombination.includes(3);
+                                    const has4 = nextCombination.includes(4);
+                                    const len = nextCombination.length;
+
+                                    let computedKey = '';
+                                    if (has1 && has2 && has3 && len === 3) computedKey = 'A';
+                                    else if (has1 && has3 && len === 2) computedKey = 'B';
+                                    else if (has2 && has4 && len === 2) computedKey = 'C';
+                                    else if (has4 && len === 1) computedKey = 'D';
+                                    else if (has1 && has2 && has3 && has4 && len === 4) computedKey = 'E';
+
+                                    handleSelectAnswer(q.id, computedKey);
+                                  };
+
+                                  return (
+                                    <button
+                                      type="button"
+                                      key={sIdx}
+                                      onClick={toggleVal}
+                                      className={`p-2.5 rounded-lg border text-xs text-center transition cursor-pointer font-bold ${
+                                        isChecked ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' : 'bg-white border-slate-300 text-slate-700'
+                                      }`}
+                                    >
+                                      Pernyataan ({sIdx + 1}) {isChecked ? '✓' : ''}
+                                    </button>
+                                  );
+                                })}
                               </div>
-                            )}
-                            {q.mediaType === 'Audio' && (
-                              <div className="p-2 bg-white rounded-xl border">
-                                <audio 
-                                  src={q.mediaUrl} 
-                                  controls 
-                                  className="w-full"
-                                />
-                              </div>
-                            )}
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-2.5 text-xs font-semibold">
+                              {['A', 'B', 'C', 'D', 'E'].map(choice => {
+                                const isSelected = studentAnswers[q.id] === choice;
+                                return (
+                                  <button
+                                    key={choice}
+                                    type="button"
+                                    onClick={() => handleSelectAnswer(q.id, choice)}
+                                    className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-center gap-3 ${
+                                      isSelected 
+                                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-extrabold shadow-2xs' 
+                                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs border font-black shrink-0 ${
+                                      isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-500 border-slate-300'
+                                    }`}>
+                                      {choice}
+                                    </span>
+                                    <span className="text-xs text-slate-700 leading-snug">
+                                      {choice === 'A' && 'A: jika (1), (2), dan (3) benar'}
+                                      {choice === 'B' && 'B: jika (1) dan (3) benar'}
+                                      {choice === 'C' && 'C: jika (2) dan (4) benar'}
+                                      {choice === 'D' && 'D: jika hanya (4) yang benar'}
+                                      {choice === 'E' && 'E: jika semuanya (1,2,3,4) benar'}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {q.type === 'Uraian' && (
+                          <div className="space-y-3">
+                            <textarea
+                              placeholder="Ketikkan jawaban uraian / essay Anda di sini..."
+                              value={studentAnswers[q.id] || ''}
+                              onChange={(e) => handleSelectAnswer(q.id, e.target.value)}
+                              className="w-full h-40 px-4 py-3 border border-indigo-200 rounded-xl text-sm font-medium text-slate-800 bg-indigo-50/10 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden resize-y"
+                            />
+                          </div>
+                        )}
+
+                        {q.type === 'SebabAkibat' && (
+                          <div className="space-y-3">
+                            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1.5 text-slate-700">
+                              <p><strong>Pernyataan:</strong> "{q.statement}"</p>
+                              <p><strong>Alasan:</strong> "{q.reason}"</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-2.5 text-xs font-semibold">
+                              {['A', 'B', 'C', 'D', 'E'].map(choice => {
+                                const isSelected = studentAnswers[q.id] === choice;
+                                return (
+                                  <button
+                                    key={choice}
+                                    type="button"
+                                    onClick={() => handleSelectAnswer(q.id, choice)}
+                                    className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-center gap-3 ${
+                                      isSelected 
+                                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-extrabold shadow-2xs' 
+                                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs border font-black shrink-0 ${
+                                      isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-500 border-slate-300'
+                                    }`}>
+                                      {choice}
+                                    </span>
+                                    <span className="text-xs text-slate-700 leading-snug">
+                                      {choice === 'A' && 'A: Pernyataan BENAR, Alasan BENAR, keduanya ada Hubungan Sebab-Akibat.'}
+                                      {choice === 'B' && 'B: Pernyataan BENAR, Alasan BENAR, keduanya TIDAK ada Hubungan Sebab-Akibat.'}
+                                      {choice === 'C' && 'C: Pernyataan BENAR, Alasan SALAH.'}
+                                      {choice === 'D' && 'D: Pernyataan SALAH, Alasan BENAR.'}
+                                      {choice === 'E' && 'E: Pernyataan dan Alasan keduanya SALAH.'}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* RENDERING OPTION SELECTION BY TYPE */}
-                    {q.type === 'PilihanGanda' && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-8 text-xs font-semibold">
-                        {q.options.map((opt, oIdx) => {
-                          const optionLetter = String.fromCharCode(65 + oIdx);
-                          const isSelected = studentAnswers[q.id] === optionLetter;
-                          return (
-                            <button
-                              key={oIdx}
-                              onClick={() => handleSelectAnswer(q.id, optionLetter)}
-                              className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center gap-3 ${
-                                isSelected 
-                                  ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 font-bold' 
-                                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                              }`}
-                            >
-                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border font-bold flex-shrink-0 ${
-                                isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-500 border-slate-200'
-                              }`}>
-                                {optionLetter}
-                              </span>
-                              <span>{opt}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                    {/* BOTTOM NAVIGATION BUTTONS BAR (SOAL SEBELUMNYA, RAGU-RAGU, SOAL SELANJUTNYA) */}
+                    <div className="bg-slate-100 border-t border-slate-200 p-4 sm:px-6 flex flex-wrap items-center justify-between gap-3">
+                      
+                      {/* BUTTON PREVIOUS */}
+                      <button
+                        type="button"
+                        disabled={safeIndex === 0}
+                        onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
+                        className={`px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 cursor-pointer shadow-2xs ${
+                          safeIndex === 0
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                            : 'bg-indigo-600 hover:bg-indigo-700 text-white active:scale-95'
+                        }`}
+                      >
+                        <ChevronLeft className="w-4 h-4" /> SOAL SEBELUMNYA
+                      </button>
 
-                    {q.type === 'PilihanGandaKompleks' && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-8 text-xs font-semibold">
-                        {q.options.map((opt, oIdx) => {
-                          const currentSelection = (studentAnswers[q.id] as string[]) || [];
-                          const isSelected = currentSelection.includes(opt);
-                          return (
-                            <button
-                              key={oIdx}
-                              onClick={() => handleSelectMultipleAnswer(q.id, opt, !isSelected)}
-                              className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center gap-3 ${
-                                isSelected 
-                                  ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 font-bold' 
-                                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                              }`}
-                            >
-                              <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] border font-bold flex-shrink-0 ${
-                                isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-500 border-slate-200'
-                              }`}>
-                                {isSelected ? '✓' : ''}
-                              </span>
-                              <span>{opt}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                      {/* BUTTON RAGU-RAGU */}
+                      <button
+                        type="button"
+                        onClick={() => toggleDoubtful(q.id)}
+                        className={`px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 cursor-pointer shadow-2xs border ${
+                          isCurrentDoubtful
+                            ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 active:scale-95'
+                            : 'bg-amber-400/20 hover:bg-amber-400/30 text-amber-900 border-amber-300 active:scale-95'
+                        }`}
+                      >
+                        <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] font-black ${
+                          isCurrentDoubtful ? 'bg-white text-amber-600 border-white' : 'border-amber-700 bg-white/50 text-amber-800'
+                        }`}>
+                          {isCurrentDoubtful ? '✓' : ''}
+                        </span>
+                        RAGU - RAGU
+                      </button>
 
-                    {q.type === 'PilihanAsosiatif' && (
-                      <div className="space-y-3 pl-8">
-                        {/* Interactive checkbox helper preview */}
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs text-slate-600 leading-relaxed">
-                          <p className="font-bold text-slate-700 mb-1">Simulasikan Pilihan Kombinasi Anda:</p>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-semibold">
-                            {q.statements.map((st, sIdx) => {
-                              const currentSelectedCombination = (studentAnswers[`aso_helper_${q.id}`] as number[]) || [];
-                              const isChecked = currentSelectedCombination.includes(sIdx + 1);
-
-                              const toggleVal = () => {
-                                let nextCombination: number[];
-                                if (isChecked) {
-                                  nextCombination = currentSelectedCombination.filter(v => v !== sIdx + 1);
-                                } else {
-                                  nextCombination = [...currentSelectedCombination, sIdx + 1].sort();
-                                }
-                                handleSelectAnswer(`aso_helper_${q.id}`, nextCombination);
-                                
-                                // Automatically compute matching choice (A, B, C, D, E) for the student
-                                const has1 = nextCombination.includes(1);
-                                const has2 = nextCombination.includes(2);
-                                const has3 = nextCombination.includes(3);
-                                const has4 = nextCombination.includes(4);
-                                const len = nextCombination.length;
-
-                                let computedKey = '';
-                                if (has1 && has2 && has3 && len === 3) computedKey = 'A';
-                                else if (has1 && has3 && len === 2) computedKey = 'B';
-                                else if (has2 && has4 && len === 2) computedKey = 'C';
-                                else if (has4 && len === 1) computedKey = 'D';
-                                else if (has1 && has2 && has3 && has4 && len === 4) computedKey = 'E';
-
-                                handleSelectAnswer(q.id, computedKey);
-                              };
-
-                              return (
-                                <button
-                                  type="button"
-                                  key={sIdx}
-                                  onClick={toggleVal}
-                                  className={`p-2 rounded-lg border text-[10px] text-center transition cursor-pointer ${
-                                    isChecked ? 'bg-indigo-600 text-white border-indigo-600 font-bold' : 'bg-white border-slate-200'
-                                  }`}
-                                >
-                                  Pernyataan ({sIdx + 1}) {isChecked ? '✓' : ''}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* ANBK evaluation choices */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs font-semibold">
-                          {['A', 'B', 'C', 'D', 'E'].map(choice => {
-                            const isSelected = studentAnswers[q.id] === choice;
-                            return (
-                              <button
-                                key={choice}
-                                onClick={() => handleSelectAnswer(q.id, choice)}
-                                className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center gap-3 ${
-                                  isSelected 
-                                    ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 font-bold' 
-                                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                                }`}
-                              >
-                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border font-bold flex-shrink-0 ${
-                                  isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-500 border-slate-200'
-                                }`}>
-                                  {choice}
-                                </span>
-                                <span className="text-[10px] text-slate-600 leading-snug">
-                                  {choice === 'A' && 'A: jika (1), (2), dan (3) benar'}
-                                  {choice === 'B' && 'B: jika (1) dan (3) benar'}
-                                  {choice === 'C' && 'C: jika (2) dan (4) benar'}
-                                  {choice === 'D' && 'D: jika hanya (4) yang benar'}
-                                  {choice === 'E' && 'E: jika semuanya (1,2,3,4) benar'}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {q.type === 'Uraian' && (
-                      <div className="space-y-3 pl-8">
-                        <textarea
-                          placeholder="Ketikkan jawaban Anda di sini..."
-                          value={studentAnswers[q.id] || ''}
-                          onChange={(e) => handleSelectAnswer(q.id, e.target.value)}
-                          className="w-full h-32 px-4 py-3 border border-indigo-200 rounded-xl text-sm font-medium text-slate-800 bg-indigo-50/20 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden resize-y"
-                        />
-                      </div>
-                    )}
-
-                    {q.type === 'SebabAkibat' && (
-                      <div className="space-y-3 pl-8">
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1 text-slate-600">
-                          <p><strong>Pernyataan:</strong> "{q.statement}"</p>
-                          <p><strong>Alasan:</strong> "{q.reason}"</p>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-2.5 text-xs font-semibold">
-                          {['A', 'B', 'C', 'D', 'E'].map(choice => {
-                            const isSelected = studentAnswers[q.id] === choice;
-                            return (
-                              <button
-                                key={choice}
-                                onClick={() => handleSelectAnswer(q.id, choice)}
-                                className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center gap-3 ${
-                                  isSelected 
-                                    ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 font-bold' 
-                                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                                }`}
-                              >
-                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border font-bold flex-shrink-0 ${
-                                  isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-500 border-slate-200'
-                                }`}>
-                                  {choice}
-                                </span>
-                                <span className="text-[10px] text-slate-600 leading-snug">
-                                  {choice === 'A' && 'A: Pernyataan BENAR, Alasan BENAR, keduanya ada Hubungan Sebab-Akibat.'}
-                                  {choice === 'B' && 'B: Pernyataan BENAR, Alasan BENAR, keduanya TIDAK ada Hubungan Sebab-Akibat.'}
-                                  {choice === 'C' && 'C: Pernyataan BENAR, Alasan SALAH.'}
-                                  {choice === 'D' && 'D: Pernyataan SALAH, Alasan BENAR.'}
-                                  {choice === 'E' && 'E: Pernyataan dan Alasan keduanya SALAH.'}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                      {/* BUTTON NEXT / SELESAI */}
+                      {safeIndex < totalQuestions - 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => setCurrentQuestionIndex(prev => Math.min(totalQuestions - 1, prev + 1))}
+                          className="px-4 sm:px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 cursor-pointer shadow-2xs active:scale-95"
+                        >
+                          SOAL SELANJUTNYA <ChevronRight className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmSubmitModal(true)}
+                          className="px-4 sm:px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 cursor-pointer shadow-2xs active:scale-95"
+                        >
+                          SELESAI UJIAN <CheckCircle className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
-              })}
+              })()}
             </div>
 
-            {/* Submission button */}
-            <button
-              onClick={handleEvaluateExam}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-6 rounded-2xl transition cursor-pointer text-sm shadow-md flex items-center justify-center gap-2"
-            >
-              <Send className="w-4 h-4" /> Selesaikan & Kirim Ujian ke Server
-            </button>
-          </div>
+            {/* RIGHT COLUMN: QUESTION NUMBER GRID & HENTIKAN UJIAN (lg:col-span-4) */}
+            <div className="lg:col-span-4 space-y-4 lg:sticky lg:top-24">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                
+                <div className="border-b border-slate-200 pb-3 flex items-center justify-between">
+                  <h4 className="font-black text-slate-900 text-sm tracking-wide uppercase flex items-center gap-2">
+                    <Grid className="w-4 h-4 text-indigo-600" /> NOMOR SOAL
+                  </h4>
+                  <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                    {activeExam.questions.length} Butir
+                  </span>
+                </div>
 
-          {/* RIGHT SIDE - TIMERS & STATS */}
-          <div className="lg:col-span-4 space-y-6">
-            <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm text-center space-y-4 lg:sticky lg:top-24">
-              <span className="text-slate-400 font-bold text-xs uppercase tracking-wider block">Sisa Waktu Ujian</span>
-              <span className="text-4xl font-mono font-black text-slate-900 tracking-tight block">
-                {formatTime(timerSeconds)}
-              </span>
+                {/* 5-COLUMN GRID OF QUESTION NUMBERS */}
+                <div className="grid grid-cols-5 gap-2 max-h-[360px] overflow-y-auto p-1 pr-1 custom-scrollbar">
+                  {activeExam.questions.map((q, idx) => {
+                    const isAns = checkQuestionAnswered(q);
+                    const isDoubt = Boolean(doubtfulQuestions[q.id]);
+                    const isCurrent = idx === currentQuestionIndex;
 
-              <div className="border-t border-slate-200/60 pt-4 space-y-2 text-xs">
-                <div className="flex justify-between items-center text-slate-500">
-                  <span>Nama Peserta</span>
-                  <span className="font-bold text-slate-800">{currentStudent.name}</span>
+                    let btnClass = 'bg-slate-200 text-slate-700 hover:bg-slate-300 border-slate-300';
+                    if (isDoubt) {
+                      btnClass = 'bg-amber-500 text-white font-black border-amber-600 shadow-2xs';
+                    } else if (isAns) {
+                      btnClass = 'bg-emerald-600 text-white font-black border-emerald-700 shadow-2xs';
+                    }
+
+                    return (
+                      <button
+                        key={q.id}
+                        type="button"
+                        onClick={() => setCurrentQuestionIndex(idx)}
+                        className={`aspect-square w-full rounded-xl text-xs sm:text-sm font-extrabold border transition flex items-center justify-center cursor-pointer relative ${btnClass} ${
+                          isCurrent ? 'ring-4 ring-indigo-500 ring-offset-2 scale-105 z-10 shadow-md font-black' : 'hover:scale-105'
+                        }`}
+                      >
+                        {idx + 1}
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="flex justify-between items-center text-slate-500">
-                  <span>NIS Siswa</span>
-                  <span className="font-mono font-bold text-slate-800">{currentStudent.nis}</span>
+
+                {/* LEGEND COLOR INDICATORS */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-[11px] font-bold text-slate-700 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 rounded-md bg-emerald-600 border border-emerald-700 shrink-0" />
+                    <span>Hijau = Sudah Dijawab</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 rounded-md bg-amber-500 border border-amber-600 shrink-0" />
+                    <span>Orange = Ragu-ragu</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 rounded-md bg-slate-200 border border-slate-300 shrink-0" />
+                    <span>Abu-abu = Belum Dijawab</span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-slate-500">
-                  <span>Kelas Ujian</span>
-                  <span className="font-bold text-slate-800">{currentStudent.className}</span>
-                </div>
+
+                {/* RED HENTIKAN UJIAN BUTTON */}
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmSubmitModal(true)}
+                  className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-black text-xs sm:text-sm rounded-xl transition cursor-pointer shadow-md flex items-center justify-center gap-2 border border-rose-700 uppercase tracking-wide"
+                >
+                  <AlertOctagon className="w-4 h-4" /> HENTIKAN UJIAN
+                </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-              {cheatingAttempts > 0 && (
-                <div className="p-3 bg-red-50 text-red-800 text-[11px] font-bold rounded-xl border border-red-100 space-y-1">
-                  <p className="flex items-center gap-1 justify-center">
-                    <ShieldAlert className="w-4 h-4 text-red-600 animate-bounce" />
-                    PERINGATAN DETEKSI
-                  </p>
-                  <p className="font-medium text-red-600">Anda tercatat keluar dari tab ujian sebanyak {cheatingAttempts}x!</p>
+      {/* CONFIRM SUBMIT / HENTIKAN UJIAN MODAL */}
+      {showConfirmSubmitModal && activeExam && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-6 shadow-2xl border border-slate-100">
+            <div className="text-center space-y-3">
+              <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100 shadow-sm">
+                <AlertOctagon className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900">Konfirmasi Hentikan / Selesaikan Ujian</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Periksa kembali ringkasan lembar pengerjaan jawaban Anda sebelum dikirimkan ke server.
+                </p>
+              </div>
+            </div>
+
+            {(() => {
+              const stats = getExamSummaryStats();
+              return (
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2.5 text-xs font-bold text-slate-700">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
+                    <span className="text-slate-500">Total Soal Ujian</span>
+                    <span className="font-extrabold text-slate-900 text-sm">{stats.total} Soal</span>
+                  </div>
+                  <div className="flex justify-between items-center text-emerald-700">
+                    <span className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5" /> Sudah Dijawab</span>
+                    <span className="font-extrabold text-emerald-800 text-sm">{stats.answered} Soal</span>
+                  </div>
+                  <div className="flex justify-between items-center text-amber-700">
+                    <span className="flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Ragu - Ragu</span>
+                    <span className="font-extrabold text-amber-800 text-sm">{stats.doubtful} Soal</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-500">
+                    <span className="flex items-center gap-1.5"><Info className="w-3.5 h-3.5" /> Belum Dijawab</span>
+                    <span className="font-extrabold text-slate-700 text-sm">{stats.unanswered} Soal</span>
+                  </div>
                 </div>
-              )}
+              );
+            })()}
+
+            {getExamSummaryStats().doubtful > 0 && (
+              <div className="p-3 bg-amber-50 text-amber-900 text-xs font-semibold rounded-xl border border-amber-200/80">
+                ⚠️ Masih ada <strong>{getExamSummaryStats().doubtful} soal</strong> bertanda Ragu-Ragu. Anda disarankan memeriksa kembali pilihan Anda sebelum menghentikan ujian.
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowConfirmSubmitModal(false)}
+                className="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Batal, Lanjutkan Ujian
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirmSubmitModal(false);
+                  handleEvaluateExam();
+                }}
+                className="w-full py-3 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition cursor-pointer shadow-md flex items-center justify-center gap-2"
+              >
+                <Send className="w-4 h-4" /> Ya, Hentikan & Kirim Jawaban
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {/* SCORE RESULTS DISPLAY */}
-      {scoreResult && activeExam && (
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8 max-w-2xl mx-auto space-y-6 text-center animate-fade-in">
-          <div className="space-y-2">
-            <CheckCircle className="w-16 h-16 text-emerald-500 mx-auto" />
-            <h3 className="text-2xl font-black text-slate-950">Ujian Berhasil Dikirim ke Google Sheets!</h3>
-            <p className="text-slate-500 text-sm">Evaluasi pengerjaan Anda telah selesai dinilai secara otomatis di server.</p>
-          </div>
+      {scoreResult && activeExam && (() => {
+        const hasEssayQuestions = activeExam.questions.some(q => q.type === 'Uraian');
+        const showScore = !hasEssayQuestions && (activeExam.showScoreToStudent !== false);
 
-          <div className="bg-slate-50/80 rounded-2xl p-6 border border-slate-100 max-w-sm mx-auto space-y-4">
-            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider block">Nilai Hasil Belajar</span>
-            <span className="text-6xl font-black text-indigo-700 block">{scoreResult.score}</span>
-            <p className="text-xs text-slate-500">
-              Menjawab benar <strong>{scoreResult.totalPoints}</strong> dari total <strong>{scoreResult.maxPoints}</strong> butir soal.
-            </p>
-          </div>
-
-          {cheatingAttempts > 0 ? (
-            <div className="p-3 bg-amber-50 text-amber-800 text-xs rounded-xl border border-amber-200 inline-block font-semibold">
-              Log Ujian mencatat {cheatingAttempts} kali pemindahan fokus tab browser. Tetaplah jujur di ujian berikutnya!
+        return (
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-xs p-8 max-w-2xl mx-auto space-y-6 text-center animate-fade-in">
+            <div className="space-y-2">
+              <CheckCircle className="w-16 h-16 text-emerald-500 mx-auto" />
+              <h3 className="text-2xl font-black text-slate-950">Selamat Telah Mengerjakan Ujian</h3>
+              <p className="text-slate-500 text-sm">Jawaban pengerjaan Anda telah berhasil tersimpan di sistem CBT.</p>
             </div>
-          ) : (
-            <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-xl border border-emerald-200 inline-block font-semibold flex items-center gap-1.5 justify-center">
-              <Sparkles className="w-4 h-4 text-emerald-600" />
-              Sangat Bagus! Anda mengerjakan dengan integritas tinggi (0 pelanggaran tab).
-            </div>
-          )}
 
-          <button
-            onClick={() => {
-              setScoreResult(null);
-              setActiveExam(null);
-              setTokenInput('');
-              setActiveTab('exams');
-            }}
-            className="w-full bg-slate-900 hover:bg-slate-950 text-white font-bold text-sm py-3 rounded-xl transition cursor-pointer"
-          >
-            Kembali ke Dashboard Siswa
-          </button>
-        </div>
-      )}
+            {hasEssayQuestions ? (
+              <div className="bg-amber-50/80 rounded-2xl p-6 border border-amber-200/80 max-w-md mx-auto space-y-2 text-amber-950">
+                <span className="text-xs font-black uppercase tracking-wider block text-amber-800">Ujian Soal Uraian (Essay)</span>
+                <p className="text-xs font-medium leading-relaxed">
+                  Ujian ini memuat soal Uraian. Nilai hasil belajar akan tersedia dan diperbarui di Leger setelah dikoreksi oleh Guru.
+                </p>
+              </div>
+            ) : showScore ? (
+              <div className="bg-slate-50/80 rounded-2xl p-6 border border-slate-100 max-w-sm mx-auto space-y-4">
+                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider block">Nilai Hasil Belajar</span>
+                <span className="text-6xl font-black text-indigo-700 block">{scoreResult.score}</span>
+                <p className="text-xs text-slate-500">
+                  Menjawab benar <strong>{scoreResult.totalPoints}</strong> dari total <strong>{scoreResult.maxPoints}</strong> poin.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-slate-50/80 rounded-2xl p-6 border border-slate-200 max-w-md mx-auto space-y-2 text-slate-600">
+                <span className="text-xs font-bold uppercase tracking-wider block text-slate-500">Nilai Hasil Belajar</span>
+                <p className="text-xs font-medium leading-relaxed">
+                  Guru mengatur agar nilai ujian ini tidak ditampilkan secara langsung. Silakan hubungi Guru Anda untuk mengonfirmasi hasil nilai.
+                </p>
+              </div>
+            )}
+
+            {cheatingAttempts > 0 ? (
+              <div className="p-3 bg-amber-50 text-amber-800 text-xs rounded-xl border border-amber-200 inline-block font-semibold">
+                Log Ujian mencatat {cheatingAttempts} kali pemindahan fokus tab browser. Tetaplah jujur di ujian berikutnya!
+              </div>
+            ) : (
+              <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-xl border border-emerald-200 inline-block font-semibold flex items-center gap-1.5 justify-center">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                Sangat Bagus! Anda mengerjakan dengan integritas tinggi (0 pelanggaran tab).
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                setScoreResult(null);
+                setActiveExam(null);
+                setTokenInput('');
+                setActiveTab('exams');
+              }}
+              className="w-full bg-slate-900 hover:bg-slate-950 text-white font-bold text-sm py-3 rounded-xl transition cursor-pointer"
+            >
+              Kembali ke Dashboard Siswa
+            </button>
+          </div>
+        );
+      })()}
 
       {/* CHEATING ALERT MODAL */}
       {showCheatModal && (
@@ -2886,26 +3227,45 @@ export default function StudentPanel({
             return (
               <div className="space-y-4">
                 {mySubmissions.map((sub) => {
-                  const subjectName = subjects.find(s => s.id === exams.find(e => e.id === sub.examId)?.subjectId)?.name || 'Mata Pelajaran';
-                  
+                  const examObj = exams.find(e => e.id === sub.examId);
+                  const subjectName = subjects.find(s => s.id === examObj?.subjectId)?.name || 'Mata Pelajaran';
+                  const hasEssayQuestions = examObj?.questions.some(q => q.type === 'Uraian');
+                  const isGradedPending = hasEssayQuestions && !sub.essayGraded;
+                  const isScoreHiddenByTeacher = !hasEssayQuestions && examObj?.showScoreToStudent === false;
+
                   return (
                     <div key={sub.id} className="border border-slate-100 rounded-2xl p-5 hover:border-slate-200 transition bg-slate-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in">
                       <div>
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded">
                             {subjectName}
                           </span>
                           <span className="text-[10px] text-slate-400 font-medium">
                             {new Date(sub.submittedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </span>
+                          {hasEssayQuestions && (
+                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
+                              Ada Uraian
+                            </span>
+                          )}
                         </div>
                         <h4 className="font-extrabold text-slate-900 text-sm">{sub.examTitle}</h4>
                       </div>
-                      <div className="bg-white px-5 py-3 rounded-xl shadow-sm border border-slate-100 flex flex-col items-center min-w-[100px]">
+                      <div className="bg-white px-5 py-3 rounded-xl shadow-xs border border-slate-100 flex flex-col items-center min-w-[120px]">
                         <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">Nilai Akhir</span>
-                        <span className={`text-2xl font-black ${sub.score >= 75 ? 'text-green-600' : 'text-rose-600'}`}>
-                          {sub.score}
-                        </span>
+                        {isGradedPending ? (
+                          <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                            Proses Koreksi
+                          </span>
+                        ) : isScoreHiddenByTeacher ? (
+                          <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+                            Disembunyikan
+                          </span>
+                        ) : (
+                          <span className={`text-2xl font-black ${sub.score >= 75 ? 'text-green-600' : 'text-rose-600'}`}>
+                            {sub.score}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );

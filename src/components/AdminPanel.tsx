@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import toast from 'react-hot-toast';
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType } from 'docx';
@@ -10,7 +10,7 @@ import { SCHOOL_LOGO_BASE64 } from '../assets/schoolLogo';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { restoreDatabaseBatch, addDocument } from '../firebaseSync';
 import { 
-  Teacher, Student, ClassItem, SubjectItem, JournalEntry, CheatLog, ExamSubmission, RegistrationRequest, SchoolConfig, GlobalAnnouncement, TeachingModule, QuestionBank, Material, Exam, CounselingReferral, CounselingSession, DailyCheckIn, NeedsAssessment, Sociometry, HomeVisit, CareerPlan, ManualAssessment, TeacherAnnouncement, ShareRequest
+  Teacher, Student, ClassItem, SubjectItem, JournalEntry, CheatLog, ExamSubmission, RegistrationRequest, SchoolConfig, GlobalAnnouncement, TeachingModule, QuestionBank, Material, Exam, CounselingReferral, CounselingSession, DailyCheckIn, NeedsAssessment, Sociometry, HomeVisit, CareerPlan, ManualAssessment, TeacherAnnouncement, ShareRequest, AssignmentFolder, AssignmentSubmission, TeacherScheduleNote, LivePresentationSession
 } from '../types';
 import { 
   Users, BookOpen, GraduationCap, Calendar, Plus, Trash2, Search, Upload, ShieldAlert, Award, ArrowUpRight, UserCheck, Clock, CheckCircle, XCircle, Edit, Settings, FileSpreadsheet, Download, ArrowRight, KeyRound, MonitorSmartphone, BarChart, TrendingUp, FileText
@@ -34,11 +34,15 @@ interface AdminPanelProps {
   homeVisits?: HomeVisit[];
   careerPlans?: CareerPlan[];
   manualAssessments?: ManualAssessment[];
+  assignmentFolders?: AssignmentFolder[];
+  assignmentSubmissions?: AssignmentSubmission[];
   announcements?: TeacherAnnouncement[];
   shareRequests?: ShareRequest[];
   cheatLogs: CheatLog[];
   submissions: ExamSubmission[];
   registrations?: RegistrationRequest[];
+  scheduleNotes?: TeacherScheduleNote[];
+  livePresentations?: LivePresentationSession[];
   schoolConfig?: SchoolConfig;
   onUpdateSchoolConfig?: (config: SchoolConfig) => void;
   onAddTeacher: (teacher: Omit<Teacher, 'id'>) => void;
@@ -87,8 +91,12 @@ export default function AdminPanel({
   homeVisits = [],
   careerPlans = [],
   manualAssessments = [],
+  assignmentFolders = [],
+  assignmentSubmissions = [],
   announcements = [],
   shareRequests = [],
+  scheduleNotes = [],
+  livePresentations = [],
   schoolConfig,
   onUpdateSchoolConfig,
   onAddTeacher,
@@ -475,6 +483,9 @@ export default function AdminPanel({
       exportPayload.teachingModules = teachingModules;
       exportPayload.materials = materials;
       exportPayload.questionBanks = questionBanks;
+      exportPayload.assignmentFolders = assignmentFolders;
+      exportPayload.assignmentSubmissions = assignmentSubmissions;
+      exportPayload.scheduleNotes = scheduleNotes;
     }
 
     if (backupOptions.includeExamData) {
@@ -483,6 +494,7 @@ export default function AdminPanel({
       exportPayload.manualAssessments = manualAssessments;
       exportPayload.cheatLogs = cheatLogs;
       exportPayload.shareRequests = shareRequests;
+      exportPayload.livePresentations = livePresentations;
     }
 
     const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
@@ -664,8 +676,16 @@ export default function AdminPanel({
     landingTopTag: 'Jurnal Mengajar dan E-Learning',
     landingTitle: 'Sistem Manajemen Mengajar & E-Learning SMPN 1 BEJI',
     landingDescription: 'Aplikasi Komprehensif untuk membantu Guru dan Siswa dalam Pembelajaran dan Materi serta Ujian/Tugas & Evaluasi.',
-    footerText: '© 2026 E-Learning/E-Jurnal SMPN 1 BEJI, Kab. Pasuruan.'
+    footerText: '© 2026 E-Learning/E-Jurnal SMPN 1 BEJI, Kab. Pasuruan.',
+    principalName: 'Yayuk Sudarwati, S.Pd., M.Pd.',
+    principalNip: '197002071997032005'
   });
+
+  useEffect(() => {
+    if (schoolConfig) {
+      setLocalConfig(schoolConfig);
+    }
+  }, [schoolConfig]);
 
   // State for adding/editing teacher
   const [showAddModal, setShowAddModal] = useState(false);
@@ -728,24 +748,26 @@ export default function AdminPanel({
   const [resetTargetUser, setResetTargetUser] = useState<{ id: string; name: string; identifier: string; role: 'Teacher' | 'Student'; currentPass: string; rawObject: Teacher | Student } | null>(null);
   const [newPasswordValue, setNewPasswordValue] = useState('');
 
+  const getGradeLevel = (name: string) => {
+    const cleanName = name.replace(/^Kelas\s+/i, '').trim();
+    const match = cleanName.match(/^(XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I|12|11|10|9|8|7|6|5|4|3|2|1)[-_\s]?(.*)$/i);
+    if (!match) return { level: 99, rest: cleanName };
+    const gradeStr = match[1].toUpperCase();
+    let level = 99;
+    if (gradeStr === 'VII' || gradeStr === '7') level = 7;
+    else if (gradeStr === 'VIII' || gradeStr === '8') level = 8;
+    else if (gradeStr === 'IX' || gradeStr === '9') level = 9;
+    else if (gradeStr === 'X' || gradeStr === '10') level = 10;
+    else if (gradeStr === 'XI' || gradeStr === '11') level = 11;
+    else if (gradeStr === 'XII' || gradeStr === '12') level = 12;
+    return { level, rest: match[2] || cleanName };
+  };
+
   const sortedClasses = [...classes].sort((a, b) => {
-    const aMatch = a.name.match(/^(VII|VIII|IX|7|8|9)(.*)$/i);
-    const bMatch = b.name.match(/^(VII|VIII|IX|7|8|9)(.*)$/i);
-    
-    const getGradeLevel = (match: RegExpMatchArray | null) => {
-      if (!match) return 99;
-      const gradeStr = match[1].toUpperCase();
-      if (gradeStr === 'VII' || gradeStr === '7') return 7;
-      if (gradeStr === 'VIII' || gradeStr === '8') return 8;
-      if (gradeStr === 'IX' || gradeStr === '9') return 9;
-      return 99;
-    };
-    
-    const levelA = getGradeLevel(aMatch);
-    const levelB = getGradeLevel(bMatch);
-    
-    if (levelA !== levelB) return levelA - levelB;
-    return a.name.localeCompare(b.name);
+    const gA = getGradeLevel(a.name);
+    const gB = getGradeLevel(b.name);
+    if (gA.level !== gB.level) return gA.level - gB.level;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
   });
 
   const handleDownloadTemplate = () => {
@@ -1696,6 +1718,81 @@ export default function AdminPanel({
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1">Username admin selalu "admin". Ubah password ini untuk keamanan.</p>
               </div>
+
+              <div className="pt-3 border-t border-indigo-100 bg-indigo-50/50 p-3.5 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-indigo-950 text-xs uppercase tracking-wider">Penandatangan Resmi (Kepala Sekolah)</h4>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md font-bold">Otomatis Terhubung ke Semua Guru</span>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Nama Kepala Sekolah (Lengkap dengan Gelar)</label>
+                  <input 
+                    type="text" 
+                    value={localConfig.principalName || ''} 
+                    onChange={e => setLocalConfig({...localConfig, principalName: e.target.value})}
+                    placeholder="Yayuk Sudarwati, S.Pd., M.Pd."
+                    className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 transition font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">NIP Kepala Sekolah</label>
+                  <input 
+                    type="text" 
+                    value={localConfig.principalNip || ''} 
+                    onChange={e => setLocalConfig({...localConfig, principalNip: e.target.value})}
+                    placeholder="197002071997032005"
+                    className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 transition font-mono"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500">Semua laporan, jurnal mengajar, dan modul guru yang dicetak/diunduh akan menggunakan nama & NIP Kepala Sekolah di atas.</p>
+              </div>
+
+              <div className="pt-3 border-t border-emerald-100 bg-emerald-50/50 p-3.5 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-emerald-950 text-xs uppercase tracking-wider">Tahun Ajaran & Semester Aktif</h4>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md font-bold">Pengarsipan & Filter Laporan</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Tahun Ajaran</label>
+                    <input 
+                      type="text" 
+                      value={localConfig.academicYear || '2025/2026'} 
+                      onChange={e => setLocalConfig({...localConfig, academicYear: e.target.value})}
+                      placeholder="2025/2026"
+                      className="w-full px-3 py-2 border border-emerald-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-emerald-500 transition font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Semester Aktif</label>
+                    <select
+                      value={localConfig.semester || 'Ganjil'}
+                      onChange={e => setLocalConfig({...localConfig, semester: e.target.value as 'Ganjil' | 'Genap'})}
+                      className="w-full px-3 py-2 border border-emerald-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-emerald-500 transition font-medium"
+                    >
+                      <option value="Ganjil">Ganjil (Semester 1)</option>
+                      <option value="Genap">Genap (Semester 2)</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  {['2024/2025', '2025/2026', '2026/2027'].map(year => (
+                    <button
+                      key={year}
+                      type="button"
+                      onClick={() => setLocalConfig({...localConfig, academicYear: year})}
+                      className={`px-2 py-1 text-[11px] font-bold rounded-md border transition cursor-pointer ${
+                        (localConfig.academicYear || '2025/2026') === year 
+                          ? 'bg-emerald-600 text-white border-emerald-600' 
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {year}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500">Tahun Ajaran & Semester ini akan digunakan sebagai filter default pada Rekap Leger, Jurnal Mengajar, Tugas, dan Ujian.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -2357,7 +2454,7 @@ export default function AdminPanel({
                     className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                   >
                     <option value="ALL">Semua Kelas</option>
-                    {classes.map(c => (
+                    {sortedClasses.map(c => (
                       <option key={c.id} value={c.id}>Kelas {c.name}</option>
                     ))}
                   </select>
@@ -2555,7 +2652,7 @@ export default function AdminPanel({
                   className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                 >
                   <option value="ALL">Semua Kelas</option>
-                  {classes.map(c => (
+                  {sortedClasses.map(c => (
                     <option key={c.id} value={c.id}>Kelas {c.name}</option>
                   ))}
                 </select>
@@ -2780,7 +2877,7 @@ export default function AdminPanel({
                     className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                   >
                     <option value="ALL">Semua Kelas</option>
-                    {classes.map(c => (
+                    {sortedClasses.map(c => (
                       <option key={c.id} value={c.id}>Kelas {c.name}</option>
                     ))}
                   </select>
@@ -2960,7 +3057,7 @@ export default function AdminPanel({
                   className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                 >
                   <option value="ALL">Semua Kelas</option>
-                  {classes.map(c => (
+                  {sortedClasses.map(c => (
                     <option key={c.id} value={c.id}>Kelas {c.name}</option>
                   ))}
                 </select>
@@ -3792,22 +3889,22 @@ export default function AdminPanel({
             </div>
 
             <div className="bg-purple-50/50 border border-purple-100 p-4 rounded-2xl space-y-1">
-              <span className="text-[10px] font-black uppercase text-purple-600 tracking-wider">Pembelajaran & Jurnal</span>
+              <span className="text-[10px] font-black uppercase text-purple-600 tracking-wider">Pembelajaran & Tugas GDrive</span>
               <div className="text-xl font-black text-purple-950">
-                {journals.length + teachingModules.length + materials.length + questionBanks.length} Items
+                {journals.length + teachingModules.length + materials.length + questionBanks.length + assignmentFolders.length + assignmentSubmissions.length} Items
               </div>
               <p className="text-[11px] text-slate-500 font-medium">
-                {journals.length} Jurnal • {teachingModules.length} Perangkat
+                {journals.length} Jurnal • {assignmentFolders.length} Tugas Drive ({assignmentSubmissions.length} Berkas)
               </p>
             </div>
 
             <div className="bg-amber-50/50 border border-amber-100 p-4 rounded-2xl space-y-1">
-              <span className="text-[10px] font-black uppercase text-amber-600 tracking-wider">Ujian CBT & Nilai</span>
+              <span className="text-[10px] font-black uppercase text-amber-600 tracking-wider">Ujian CBT & Nilai Leger</span>
               <div className="text-xl font-black text-amber-950">
                 {exams.length + submissions.length + manualAssessments.length + cheatLogs.length} Records
               </div>
               <p className="text-[11px] text-slate-500 font-medium">
-                {exams.length} Ujian • {submissions.length} Lembar Jawab
+                {exams.length} Ujian • {submissions.length} Lembar Jawab • {manualAssessments.length} Nilai Leger
               </p>
             </div>
           </div>
@@ -3858,7 +3955,7 @@ export default function AdminPanel({
                       onChange={(e) => setBackupOptions({ ...backupOptions, includeKbmData: e.target.checked })}
                       className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
                     />
-                    <span>📚 Data KBM & Materi (Jurnal Mengajar, Perangkat Pembelajaran, Bank Soal)</span>
+                    <span>📚 Data KBM & Tugas (Jurnal Mengajar, Perangkat, Bank Soal, Tugas Drive & Submisi)</span>
                   </label>
 
                   <label className="flex items-center gap-2.5 cursor-pointer font-bold text-slate-800">
@@ -3937,13 +4034,28 @@ export default function AdminPanel({
                   </div>
 
                   {/* Summary of items inside preview */}
-                  <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 p-3 rounded-lg font-medium text-slate-700">
-                    <div>👨‍🏫 Guru: <strong className="text-slate-900">{(restorePreview.teachers || []).length}</strong></div>
-                    <div>👨‍🎓 Siswa: <strong className="text-slate-900">{(restorePreview.students || []).length}</strong></div>
-                    <div>💚 Sesi BK: <strong className="text-slate-900">{(restorePreview.counselingSessions || []).length}</strong></div>
-                    <div>📝 Jurnal: <strong className="text-slate-900">{(restorePreview.journals || []).length}</strong></div>
-                    <div>📑 Perangkat: <strong className="text-slate-900">{(restorePreview.teachingModules || []).length}</strong></div>
-                    <div>📝 Ujian CBT: <strong className="text-slate-900">{(restorePreview.exams || []).length}</strong></div>
+                  <div className="space-y-2">
+                    {restorePreview.schoolConfig && (
+                      <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-semibold text-indigo-950 flex items-center justify-between">
+                        <span>🏫 Konfigurasi Sekolah & TA:</span>
+                        <span className="font-extrabold text-indigo-700 bg-white px-2 py-0.5 rounded-lg border border-indigo-200">
+                          {restorePreview.schoolConfig.academicYear || '2025/2026'} — {restorePreview.schoolConfig.semester || 'Ganjil'}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 p-3 rounded-lg font-medium text-slate-700 border border-slate-200/60">
+                      <div>👨‍🏫 Guru: <strong className="text-slate-900">{(restorePreview.teachers || []).length}</strong></div>
+                      <div>👨‍🎓 Siswa: <strong className="text-slate-900">{(restorePreview.students || []).length}</strong></div>
+                      <div>🏫 Kelas & Mapel: <strong className="text-slate-900">{(restorePreview.classes || []).length} K. / {(restorePreview.subjects || []).length} M.</strong></div>
+                      <div>💚 Sesi & Referal BK: <strong className="text-slate-900">{(restorePreview.counselingSessions || []).length + (restorePreview.counselingReferrals || []).length}</strong></div>
+                      <div>📝 Jurnal & Catatan: <strong className="text-slate-900">{(restorePreview.journals || []).length} J. / {(restorePreview.scheduleNotes || []).length} C.</strong></div>
+                      <div>📁 Tugas Drive & Submisi: <strong className="text-slate-900">{(restorePreview.assignmentFolders || []).length} T. / {(restorePreview.assignmentSubmissions || []).length} S.</strong></div>
+                      <div>📑 Perangkat & Bank Soal: <strong className="text-slate-900">{(restorePreview.teachingModules || []).length} P. / {(restorePreview.questionBanks || []).length} B.</strong></div>
+                      <div>📝 Ujian CBT & Submisi: <strong className="text-slate-900">{(restorePreview.exams || []).length} U. / {(restorePreview.submissions || []).length} S.</strong></div>
+                      <div>📊 Nilai Leger Manual: <strong className="text-slate-900">{(restorePreview.manualAssessments || []).length}</strong></div>
+                      <div>📢 Pengumuman & Registrasi: <strong className="text-slate-900">{(restorePreview.announcements || []).length + (restorePreview.globalAnnouncements || []).length} P. / {(restorePreview.registrations || []).length} R.</strong></div>
+                    </div>
                   </div>
 
                   {/* Mode option */}

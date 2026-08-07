@@ -23,7 +23,9 @@ const DEFAULT_SCHOOL_CONFIG: SchoolConfig = {
   landingTitle: 'Sistem Manajemen Mengajar & E-Learning SMPN 1 BEJI',
   landingDescription: 'Aplikasi Komprehensif untuk membantu Guru dan Siswa dalam Pembelajaran dan Materi serta Ujian/Tugas & Evaluasi.',
   footerText: '© 2026 E-Learning/E-Jurnal SMPN 1 BEJI, Kab. Pasuruan.',
-  adminPassword: 'admin123'
+  adminPassword: 'admin123',
+  principalName: 'Yayuk Sudarwati, S.Pd., M.Pd.',
+  principalNip: '197002071997032005'
 };
 
 // === INITIAL SEED DATA ===
@@ -297,6 +299,29 @@ export default function App() {
   const [assignmentSubmissions, setAssignmentSubmissions] = useState<AssignmentSubmission[]>([]);
   const [livePresentation, setLivePresentation] = useState<LivePresentationSession | undefined>(undefined);
   const [livePresentations, setLivePresentations] = useState<LivePresentationSession[]>([]);
+
+  const sortedClasses = [...classes].sort((a, b) => {
+    const getGradeLevel = (name: string) => {
+      const cleanName = name.replace(/^Kelas\s+/i, '').trim();
+      const match = cleanName.match(/^(XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I|12|11|10|9|8|7|6|5|4|3|2|1)[-_\s]?(.*)$/i);
+      if (!match) return { level: 99, rest: cleanName };
+      const gradeStr = match[1].toUpperCase();
+      let level = 99;
+      if (gradeStr === 'VII' || gradeStr === '7') level = 7;
+      else if (gradeStr === 'VIII' || gradeStr === '8') level = 8;
+      else if (gradeStr === 'IX' || gradeStr === '9') level = 9;
+      else if (gradeStr === 'X' || gradeStr === '10') level = 10;
+      else if (gradeStr === 'XI' || gradeStr === '11') level = 11;
+      else if (gradeStr === 'XII' || gradeStr === '12') level = 12;
+      return { level, rest: match[2] || cleanName };
+    };
+
+    const gA = getGradeLevel(a.name);
+    const gB = getGradeLevel(b.name);
+
+    if (gA.level !== gB.level) return gA.level - gB.level;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  });
 
   // Portal Tab & Registration Form states
   const [portalTab, setPortalTab] = useState<'login' | 'register'>('login');
@@ -729,6 +754,10 @@ export default function App() {
       submittedAt: new Date().toISOString()
     };
     addDocument('submissions', subNode);
+  };
+
+  const handleUpdateSubmission = (sub: ExamSubmission) => {
+    updateDocument('submissions', sub);
   };
 
   const handleSaveAssignmentFolder = (folder: Omit<AssignmentFolder, 'id' | 'createdAt'>) => {
@@ -1304,8 +1333,8 @@ export default function App() {
                               onChange={(e) => setRegSubjectOrClass(e.target.value)}
                               className="w-full px-3.5 py-2 border border-slate-200 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 bg-white"
                             >
-                              {classes.map(c => (
-                                <option key={c.id} value={c.name}>{c.name}</option>
+                              {sortedClasses.map(c => (
+                                <option key={c.id} value={c.name}>Kelas {c.name}</option>
                               ))}
                             </select>
                           )}
@@ -1385,8 +1414,12 @@ export default function App() {
                 homeVisits={homeVisits}
                 careerPlans={careerPlans}
                 manualAssessments={manualAssessments}
+                assignmentFolders={assignmentFolders}
+                assignmentSubmissions={assignmentSubmissions}
                 announcements={announcements}
                 shareRequests={shareRequests}
+                scheduleNotes={scheduleNotes}
+                livePresentations={livePresentations}
                 onUpdateStudent={handleUpdateStudent}
                 onBulkAddStudents={handleBulkAddStudents}
                 onApproveRegistration={handleApproveRegistration}
@@ -1414,6 +1447,7 @@ export default function App() {
                 questionBanks={questionBanks}
                 journals={journals}
                 submissions={submissions}
+                onUpdateSubmission={handleUpdateSubmission}
                 cheatLogs={cheatLogs}
                 onDeleteCheatLog={handleDeleteCheatLog}
                 onClearCheatLogsBatch={handleClearCheatLogsBatch}
@@ -1459,6 +1493,8 @@ export default function App() {
                 livePresentation={livePresentation}
                 livePresentations={livePresentations}
                 onUpdateLivePresentation={handleUpdateLivePresentation}
+                schoolConfig={schoolConfig}
+                onUpdateSchoolConfig={saveSchoolConfigState}
               />
             )}
 
@@ -1509,6 +1545,8 @@ export default function App() {
                 onSubmitExam={handleSubmitExam}
                 assignmentFolders={assignmentFolders}
                 assignmentSubmissions={assignmentSubmissions}
+                manualAssessments={manualAssessments}
+                schoolConfig={schoolConfig}
                 onSaveAssignmentSubmission={handleSaveAssignmentSubmission}
                 livePresentation={livePresentation}
                 livePresentations={livePresentations}

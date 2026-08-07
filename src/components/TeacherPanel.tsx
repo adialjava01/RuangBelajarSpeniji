@@ -9,15 +9,17 @@ import { storage, db } from '../firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { addDocument } from '../firebaseSync';
 import { SCHOOL_LOGO_BASE64 } from '../assets/schoolLogo';
+import { analyzeDriveUrl } from '../utils/gdrive';
 import { 
-  Teacher, Student, ClassItem, SubjectItem, Material, JournalEntry, Exam, ExamQuestion, QuestionType, TeacherScheduleNote, TeacherAnnouncement, QuestionBank, ExamSubmission, ShareRequest, CheatLog, TeachingModule, ManualAssessment, ManualGrade, CounselingReferral, AssignmentFolder, AssignmentSubmission, LivePresentationSession
+  Teacher, Student, ClassItem, SubjectItem, Material, JournalEntry, Exam, ExamQuestion, QuestionType, TeacherScheduleNote, TeacherAnnouncement, QuestionBank, ExamSubmission, ShareRequest, CheatLog, TeachingModule, ManualAssessment, ManualGrade, CounselingReferral, AssignmentFolder, AssignmentSubmission, LivePresentationSession, SchoolConfig
 } from '../types';
 
 import { 
   BookOpen, Plus, Trash2, Calendar, FileText, ToggleLeft, ToggleRight, ListTodo, Key, Clock, HelpCircle, Save, Check,
   FileSpreadsheet, Upload, AlertCircle, Clipboard, Download, Info, Printer, Filter, BarChart3, X, Settings, Building, UserCheck, ShieldAlert,
   Edit3, Camera, User, Image, MapPin, Bell, Megaphone, AlertTriangle, Sparkles, Send, Database, CheckCircle, FileCode, Users,
-  Folder, FolderPlus, Scissors, ClipboardPaste, Copy, CornerUpLeft, ArrowLeft, Search, Tv, Radio, Eye, Play, Square, Maximize2, Minimize2, MousePointer, ChevronLeft, ChevronRight, Lock, Unlock, ExternalLink
+  Folder, FolderPlus, Scissors, ClipboardPaste, Copy, CornerUpLeft, ArrowLeft, Search, Tv, Radio, Eye, Play, Square, Maximize2, Minimize2, MousePointer, ChevronLeft, ChevronRight, Lock, Unlock, ExternalLink,
+  Award, TrendingUp, CheckCircle2, XCircle, Sliders, FileCheck, Layers
 } from 'lucide-react';
 
 export interface SchoolIdentityConfig {
@@ -44,6 +46,7 @@ interface TeacherPanelProps {
   questionBanks?: QuestionBank[];
   journals: JournalEntry[];
   submissions?: ExamSubmission[];
+  onUpdateSubmission?: (submission: ExamSubmission) => void;
   manualAssessments?: ManualAssessment[];
   cheatLogs?: CheatLog[];
   onDeleteCheatLog?: (id: string) => void;
@@ -89,6 +92,8 @@ interface TeacherPanelProps {
   livePresentation?: LivePresentationSession;
   livePresentations?: LivePresentationSession[];
   onUpdateLivePresentation?: (session: LivePresentationSession) => void;
+  schoolConfig?: SchoolConfig;
+  onUpdateSchoolConfig?: (config: SchoolConfig) => void;
 }
 
 export function renderFormattedText(text: string, fontPreset?: 'Sans' | 'Serif' | 'Grotesk' | 'Mono') {
@@ -155,6 +160,7 @@ export default function TeacherPanel({
   questionBanks = [],
   journals,
   submissions = [],
+  onUpdateSubmission,
   manualAssessments = [],
   cheatLogs = [],
   onDeleteCheatLog,
@@ -199,31 +205,35 @@ export default function TeacherPanel({
   onDeleteAssignmentSubmission,
   livePresentation,
   livePresentations,
-  onUpdateLivePresentation
+  onUpdateLivePresentation,
+  schoolConfig,
+  onUpdateSchoolConfig
 }: TeacherPanelProps) {
   const myLivePresentation = (livePresentations && currentTeacher)
     ? livePresentations.find(lp => lp.teacherId === currentTeacher.id && lp.active)
     : (livePresentation?.teacherId === currentTeacher?.id ? livePresentation : undefined);
 
   const myScheduleNotes = (scheduleNotes || []).filter(n => n.teacherId === currentTeacher.id);
+  const getGradeLevel = (name: string) => {
+    const cleanName = name.replace(/^Kelas\s+/i, '').trim();
+    const match = cleanName.match(/^(XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I|12|11|10|9|8|7|6|5|4|3|2|1)[-_\s]?(.*)$/i);
+    if (!match) return { level: 99, rest: cleanName };
+    const gradeStr = match[1].toUpperCase();
+    let level = 99;
+    if (gradeStr === 'VII' || gradeStr === '7') level = 7;
+    else if (gradeStr === 'VIII' || gradeStr === '8') level = 8;
+    else if (gradeStr === 'IX' || gradeStr === '9') level = 9;
+    else if (gradeStr === 'X' || gradeStr === '10') level = 10;
+    else if (gradeStr === 'XI' || gradeStr === '11') level = 11;
+    else if (gradeStr === 'XII' || gradeStr === '12') level = 12;
+    return { level, rest: match[2] || cleanName };
+  };
+
   const sortedClasses = [...classes].sort((a, b) => {
-    const aMatch = a.name.match(/^(VII|VIII|IX|7|8|9)(.*)$/i);
-    const bMatch = b.name.match(/^(VII|VIII|IX|7|8|9)(.*)$/i);
-    
-    const getGradeLevel = (match: RegExpMatchArray | null) => {
-      if (!match) return 99;
-      const gradeStr = match[1].toUpperCase();
-      if (gradeStr === 'VII' || gradeStr === '7') return 7;
-      if (gradeStr === 'VIII' || gradeStr === '8') return 8;
-      if (gradeStr === 'IX' || gradeStr === '9') return 9;
-      return 99;
-    };
-    
-    const levelA = getGradeLevel(aMatch);
-    const levelB = getGradeLevel(bMatch);
-    
-    if (levelA !== levelB) return levelA - levelB;
-    return a.name.localeCompare(b.name);
+    const gA = getGradeLevel(a.name);
+    const gB = getGradeLevel(b.name);
+    if (gA.level !== gB.level) return gA.level - gB.level;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
   });
 
   const [activeTab, setActiveTab] = useState<'journal' | 'materials' | 'teaching_modules' | 'exams' | 'bank_soal' | 'daftar_nilai' | 'profile' | 'announcements' | 'cheatlogs' | 'konseling' | 'inbox' | 'assignments'>('journal');
@@ -361,25 +371,40 @@ export default function TeacherPanel({
   // --- 0. IDENTITAS SEKOLAH & KEPALA SEKOLAH STATE ---
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentityConfig>(() => {
     const saved = localStorage.getItem('smpn1beji_school_identity');
+    let parsed: any = null;
     if (saved) {
       try {
-        return JSON.parse(saved);
+        parsed = JSON.parse(saved);
       } catch (e) {
         console.error(e);
       }
     }
     return {
-      header1: 'PEMERINTAH KABUPATEN PASURUAN',
-      header2: 'DINAS PENDIDIKAN',
-      schoolName: 'SMP NEGERI 1 BEJI',
-      address: 'Jl. Wicaksana No. 22A Gununggangsir Beji, Kab Pasuruan',
-      cityLocation: 'Beji, Kab. Pasuruan',
-      principalName: 'Dr. H. Ahmad Wijaya, M.Pd.',
-      principalNip: '19720512 199802 1 004'
+      header1: parsed?.header1 || 'PEMERINTAH KABUPATEN PASURUAN',
+      header2: parsed?.header2 || 'DINAS PENDIDIKAN',
+      schoolName: parsed?.schoolName || 'SMP NEGERI 1 BEJI',
+      address: parsed?.address || 'Jl. Wicaksana No. 22A Gununggangsir Beji, Kab Pasuruan',
+      cityLocation: parsed?.cityLocation || 'Beji, Kab. Pasuruan',
+      principalName: schoolConfig?.principalName || parsed?.principalName || 'Yayuk Sudarwati, S.Pd., M.Pd.',
+      principalNip: schoolConfig?.principalNip || parsed?.principalNip || '197002071997032005'
     };
   });
 
   const [editIdentityForm, setEditIdentityForm] = useState<SchoolIdentityConfig>(schoolIdentity);
+
+  useEffect(() => {
+    if (schoolConfig?.principalName || schoolConfig?.principalNip) {
+      setSchoolIdentity(prev => {
+        const next = {
+          ...prev,
+          principalName: schoolConfig.principalName || prev.principalName,
+          principalNip: schoolConfig.principalNip || prev.principalNip
+        };
+        localStorage.setItem('smpn1beji_school_identity', JSON.stringify(next));
+        return next;
+      });
+    }
+  }, [schoolConfig?.principalName, schoolConfig?.principalNip]);
 
   useEffect(() => {
     setEditIdentityForm(schoolIdentity);
@@ -389,6 +414,13 @@ export default function TeacherPanel({
     e.preventDefault();
     setSchoolIdentity(editIdentityForm);
     localStorage.setItem('smpn1beji_school_identity', JSON.stringify(editIdentityForm));
+    if (onUpdateSchoolConfig && schoolConfig) {
+      onUpdateSchoolConfig({
+        ...schoolConfig,
+        principalName: editIdentityForm.principalName,
+        principalNip: editIdentityForm.principalNip
+      });
+    }
     toast('Identitas Sekolah & Nama Kepala Sekolah berhasil diperbarui!');
   };
 
@@ -476,6 +508,8 @@ export default function TeacherPanel({
   };
 
   const [selectedDayFilter, setSelectedDayFilter] = useState<string>('Semua');
+  const [scheduleViewMode, setScheduleViewMode] = useState<'jadwal' | 'agenda' | 'semua'>('jadwal');
+  const [selectedClassFilterForAgenda, setSelectedClassFilterForAgenda] = useState<string>('Semua');
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [schedDay, setSchedDay] = useState<'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jum\'at' | 'Sabtu'>('Senin');
   const [schedJam, setSchedJam] = useState('Jam Ke 1 - 2 (2 Jam Pelajaran)');
@@ -1708,6 +1742,7 @@ export default function TeacherPanel({
   const [examSubject, setExamSubject] = useState('');
   const [examToken, setExamToken] = useState('');
   const [examDuration, setExamDuration] = useState(30);
+  const [showScoreToStudent, setShowScoreToStudent] = useState<boolean>(true);
 
   // --- 4. QUESTION BANK STATE ---
   const [showAddQuestionBankModal, setShowAddQuestionBankModal] = useState(false);
@@ -1731,6 +1766,15 @@ export default function TeacherPanel({
   const [showManualAssessmentForm, setShowManualAssessmentForm] = useState(false);
   const [editingManualAssessment, setEditingManualAssessment] = useState<ManualAssessment | null>(null);
 
+  const [gradeViewMode, setGradeViewMode] = useState<'rekap' | 'evaluations'>('rekap');
+  const [rekapKkm, setRekapKkm] = useState<number>(75);
+  const [rekapSearchQuery, setRekapSearchQuery] = useState<string>('');
+  const [rekapStatusFilter, setRekapStatusFilter] = useState<'ALL' | 'TUNTAS' | 'BELUM_TUNTAS'>('ALL');
+  const [showPdfPrintModal, setShowPdfPrintModal] = useState<boolean>(false);
+  const [pdfPaperSize, setPdfPaperSize] = useState<'A4' | 'F4'>('F4');
+  const [pdfOrientation, setPdfOrientation] = useState<'landscape' | 'portrait'>('landscape');
+  const [pdfIncludeSignatures, setPdfIncludeSignatures] = useState<boolean>(true);
+
   const [manualTitle, setManualTitle] = useState('');
   const [manualSubjectId, setManualSubjectId] = useState('');
   const [manualType, setManualType] = useState('Praktikum');
@@ -1739,14 +1783,135 @@ export default function TeacherPanel({
   const [manualCriteria, setManualCriteria] = useState<string[]>([]);
   const [newCriteriaInput, setNewCriteriaInput] = useState('');
 
+  // --- 4.7. PENILAIAN & KOREKSI SOAL URAIAN STATE ---
+  const [selectedSubmissionForGrading, setSelectedSubmissionForGrading] = useState<ExamSubmission | null>(null);
+  const [gradingMethod, setGradingMethod] = useState<'PER_SOAL' | 'TOTAL_LANGSUNG'>('PER_SOAL');
+  const [essayScoresState, setEssayScoresState] = useState<{ [qId: string]: number }>({});
+  const [essayNotesState, setEssayNotesState] = useState<{ [qId: string]: string }>({});
+  const [directTotalScoreState, setDirectTotalScoreState] = useState<number>(0);
+  const [overallFeedbackState, setOverallFeedbackState] = useState<string>('');
+
+  const handleOpenEssayGradingModal = (sub: ExamSubmission) => {
+    setSelectedSubmissionForGrading(sub);
+    setGradingMethod(sub.manualTotalScore !== undefined ? 'TOTAL_LANGSUNG' : 'PER_SOAL');
+    
+    const initialScores: { [qId: string]: number } = {};
+    const initialNotes: { [qId: string]: string } = {};
+    
+    (sub.answers || []).forEach(ans => {
+      if (ans.essayScore !== undefined) {
+        initialScores[ans.questionId] = ans.essayScore;
+      } else if (ans.pointsEarned !== undefined) {
+        initialScores[ans.questionId] = ans.pointsEarned;
+      } else {
+        initialScores[ans.questionId] = 0;
+      }
+      initialNotes[ans.questionId] = ans.teacherNote || '';
+    });
+
+    setEssayScoresState(initialScores);
+    setEssayNotesState(initialNotes);
+    setDirectTotalScoreState(sub.manualTotalScore ?? sub.score ?? 0);
+    setOverallFeedbackState(sub.teacherFeedback || '');
+  };
+
+  const handleSaveEssayGrading = () => {
+    if (!selectedSubmissionForGrading) return;
+
+    const exam = teacherExams.find(e => e.id === selectedSubmissionForGrading.examId);
+    if (!exam) return;
+
+    let computedFinalScore = 0;
+
+    if (gradingMethod === 'TOTAL_LANGSUNG') {
+      computedFinalScore = Math.max(0, Math.min(100, Number(directTotalScoreState) || 0));
+    } else {
+      let totalEarned = 0;
+      let totalMaxPoints = 0;
+
+      exam.questions.forEach(q => {
+        const qWeight = q.score || 1;
+        totalMaxPoints += qWeight;
+
+        const studentAns = selectedSubmissionForGrading.answers.find(a => a.questionId === q.id);
+
+        if (q.type === 'Uraian') {
+          const teacherVal = Number(essayScoresState[q.id]) || 0;
+          totalEarned += teacherVal;
+        } else {
+          if (studentAns?.isCorrect) {
+            totalEarned += qWeight;
+          } else if (studentAns?.pointsEarned) {
+            totalEarned += studentAns.pointsEarned;
+          }
+        }
+      });
+
+      computedFinalScore = totalMaxPoints > 0 
+        ? Math.round((totalEarned / totalMaxPoints) * 100)
+        : selectedSubmissionForGrading.score;
+      
+      computedFinalScore = Math.max(0, Math.min(100, computedFinalScore));
+    }
+
+    const updatedAnswers = selectedSubmissionForGrading.answers.map(ans => {
+      const q = exam.questions.find(item => item.id === ans.questionId);
+      if (q && q.type === 'Uraian') {
+        const val = Number(essayScoresState[q.id]) || 0;
+        return {
+          ...ans,
+          essayScore: val,
+          pointsEarned: val,
+          isCorrect: val > 0,
+          teacherNote: essayNotesState[q.id] || ''
+        };
+      }
+      return ans;
+    });
+
+    const updatedSubmission: ExamSubmission = {
+      ...selectedSubmissionForGrading,
+      score: computedFinalScore,
+      manualTotalScore: gradingMethod === 'TOTAL_LANGSUNG' ? Number(directTotalScoreState) : undefined,
+      answers: updatedAnswers,
+      essayGraded: true,
+      teacherFeedback: overallFeedbackState
+    };
+
+    if (onUpdateSubmission) {
+      onUpdateSubmission(updatedSubmission);
+    } else {
+      addDocument('submissions', updatedSubmission);
+    }
+
+    toast.success(`Penilaian uraian untuk ${selectedSubmissionForGrading.studentName} berhasil disimpan! Nilai otomatis tersimpan di Leger.`);
+    setSelectedSubmissionForGrading(null);
+  };
+
+  const matchStudentClass = (st: any, classId: string) => {
+    if (!st || !classId) return false;
+    if (st.classId === classId) return true;
+    const targetClassObj = classes.find(c => c.id === classId || c.name === classId);
+    if (targetClassObj) {
+      if (st.classId === targetClassObj.id || st.classId === targetClassObj.name) return true;
+      if (st.className && (st.className === targetClassObj.name || st.className === classId)) return true;
+      const clean1 = (st.classId || '').replace(/^Kelas\s+/i, '').trim().toLowerCase();
+      const clean2 = targetClassObj.name.replace(/^Kelas\s+/i, '').trim().toLowerCase();
+      if (clean1 !== '' && clean1 === clean2) return true;
+    }
+    return false;
+  };
+
   const handleOpenManualForm = (assessment?: ManualAssessment) => {
+    setSelectedExamForGrades('');
+    setSelectedManualAssessment('');
     if (assessment) {
       setEditingManualAssessment(assessment);
       setManualTitle(assessment.title);
       setManualSubjectId(assessment.subjectId);
       setManualType(assessment.type);
       setManualDate(assessment.date);
-      setManualGrades(assessment.grades);
+      setManualGrades(assessment.grades || []);
       setManualCriteria(assessment.criteriaNames || []);
     } else {
       setEditingManualAssessment(null);
@@ -1760,8 +1925,12 @@ export default function TeacherPanel({
       setManualDate(new Date().toISOString().split('T')[0]);
       setManualCriteria([]);
       
+      const targetClassObj = classes.find(c => c.id === selectedClassForGrades || c.name === selectedClassForGrades);
+      const targetClassId = targetClassObj?.id || selectedClassForGrades;
+      const targetClassName = targetClassObj?.name || selectedClassForGrades;
+
       const classStudents = students
-        .filter(s => s.classId === selectedClassForGrades)
+        .filter(s => matchStudentClass(s, selectedClassForGrades))
         .sort((a, b) => {
           if (a.noAbsen != null && b.noAbsen != null) return a.noAbsen - b.noAbsen;
           if (a.noAbsen != null) return -1;
@@ -1834,6 +2003,61 @@ export default function TeacherPanel({
       }
       return g;
     }));
+  };
+
+  const handleSyncAssignmentToLeger = (assignmentItem: AssignmentFolder) => {
+    const targetClass = classes.find(c => c.id === assignmentItem.classId || c.name === assignmentItem.classId);
+    const classStudents = students.filter(s => s.className === targetClass?.name || s.classId === targetClass?.id || s.classId === assignmentItem.classId);
+    const taskSubs = (assignmentSubmissions || []).filter(s => s.assignmentFolderId === assignmentItem.id || s.assignmentId === assignmentItem.id);
+
+    if (taskSubs.length === 0) {
+      toast.error('Belum ada siswa yang mengumpulkan tugas ini.');
+      return;
+    }
+
+    const gradesForLeger = classStudents.map(st => {
+      const sub = taskSubs.find(s => s.studentId === st.id || s.studentNis === st.nis);
+      const customGradeInput = sub ? feedbackGradeInput[sub.id] : undefined;
+      const finalScore = customGradeInput?.grade !== undefined ? customGradeInput.grade : (sub?.grade ?? 0);
+      return {
+        studentId: st.id,
+        studentNis: st.nis,
+        studentName: st.name,
+        score: sub ? finalScore : 0,
+        notes: sub ? (customGradeInput?.feedback || sub.feedback || 'Tugas GDrive') : 'Belum Mengumpulkan'
+      };
+    });
+
+    const titleInLeger = `[Tugas GDrive] ${assignmentItem.title}`;
+    const existingAssessment = teacherManualAssessments.find(m => 
+      (m.classId === assignmentItem.classId || m.classId === targetClass?.id) && 
+      (m.title === titleInLeger || m.title === assignmentItem.title)
+    );
+
+    const teacherSubjObj = subjects.find(s => s.name.toLowerCase() === (currentTeacher.subject || '').toLowerCase() || s.id === currentTeacher.subject);
+    const subjectIdToUse = assignmentItem.subjectId || teacherSubjObj?.id || subjects[0]?.id || '';
+
+    if (existingAssessment && onUpdateManualAssessment) {
+      onUpdateManualAssessment({
+        ...existingAssessment,
+        title: titleInLeger,
+        type: 'Tugas GDrive',
+        date: assignmentItem.dueDate || new Date().toISOString().split('T')[0],
+        grades: gradesForLeger
+      });
+      toast.success(`Nilai tugas '${assignmentItem.title}' berhasil disinkronkan ke Leger Nilai!`);
+    } else if (onSaveManualAssessment) {
+      onSaveManualAssessment({
+        title: titleInLeger,
+        classId: assignmentItem.classId || targetClass?.id || '',
+        subjectId: subjectIdToUse,
+        teacherId: currentTeacher.id,
+        date: assignmentItem.dueDate || new Date().toISOString().split('T')[0],
+        type: 'Tugas GDrive',
+        grades: gradesForLeger
+      });
+      toast.success(`Nilai tugas '${assignmentItem.title}' berhasil dikirim ke Leger Nilai!`);
+    }
   };
 
   // Custom exam questions creator (shared between exams and question bank)
@@ -2373,7 +2597,8 @@ export default function TeacherPanel({
           subjectId: examSubject,
           token: examToken.toUpperCase(),
           durationMinutes: Number(examDuration),
-          questions: examQuestions
+          questions: examQuestions,
+          showScoreToStudent: showScoreToStudent
         });
         toast('Paket ujian berhasil diperbarui!');
       }
@@ -2385,7 +2610,8 @@ export default function TeacherPanel({
         token: examToken.toUpperCase(),
         durationMinutes: Number(examDuration),
         questions: examQuestions,
-        teacherId: currentTeacher.id
+        teacherId: currentTeacher.id,
+        showScoreToStudent: showScoreToStudent
       });
       toast('Paket ujian berhasil disimpan!');
     }
@@ -2395,6 +2621,7 @@ export default function TeacherPanel({
     setExamTitle('');
     setExamToken('');
     setExamQuestions([]);
+    setShowScoreToStudent(true);
     setShowAddExamModal(false);
   };
 
@@ -2446,6 +2673,7 @@ export default function TeacherPanel({
         durationMinutes: shareDuration,
         questions: [...qb.questions],
         teacherId: currentTeacher.id,
+        showScoreToStudent: true
       });
 
       results.push({
@@ -2543,12 +2771,13 @@ export default function TeacherPanel({
   const teacherSubjectId = teacherSubjectObj?.id;
 
   const isMyItem = (item: { teacherId?: string; subjectId?: string }) => {
-    if (item.teacherId) return item.teacherId === currentTeacher.id;
+    if (item.teacherId && item.teacherId === currentTeacher.id) return true;
     if (item.subjectId) {
       if (teacherSubjectId && item.subjectId === teacherSubjectId) return true;
       const subjName = subjects.find(s => s.id === item.subjectId)?.name || '';
       if (subjName && currentTeacher.subject && subjName.toLowerCase() === currentTeacher.subject.toLowerCase()) return true;
     }
+    if (!item.teacherId) return true;
     return false;
   };
 
@@ -2568,6 +2797,665 @@ export default function TeacherPanel({
     if (currentTeacher.subject && log.examTitle && log.examTitle.toLowerCase().includes(currentTeacher.subject.toLowerCase())) return true;
     return false;
   });
+
+  // --- REKAP DAFTAR NILAI HELPERS ---
+  const getClassEvaluations = (classId: string) => {
+    const evals: {
+      id: string;
+      title: string;
+      type: 'CBT' | 'Manual' | 'Tugas';
+      date: string;
+      maxScore: number;
+      rawItem: any;
+    }[] = [];
+
+    const targetClassObj = classes.find(c => c.id === classId || c.name === classId);
+    const targetClassId = targetClassObj?.id || classId;
+    const targetClassName = targetClassObj?.name || classId;
+
+    const matchClass = (cid: string | undefined) => {
+      if (!cid) return false;
+      if (cid === classId || cid === targetClassId || cid === targetClassName) return true;
+      const clean1 = cid.replace(/^Kelas\s+/i, '').trim().toLowerCase();
+      const clean2 = targetClassName.replace(/^Kelas\s+/i, '').trim().toLowerCase();
+      return clean1 === clean2;
+    };
+
+    // 1. CBT Exams
+    const classExams = teacherExams.filter(e => {
+      if (Array.isArray(e.classId)) {
+        return e.classId.some(cid => matchClass(cid));
+      }
+      return matchClass(e.classId);
+    });
+    classExams.forEach(e => {
+      evals.push({
+        id: e.id,
+        title: e.title,
+        type: 'CBT',
+        date: e.createdAt ? e.createdAt.split('T')[0] : '-',
+        maxScore: 100,
+        rawItem: e
+      });
+    });
+
+    // 2. Manual Assessments
+    const classManuals = teacherManualAssessments.filter(m => matchClass(m.classId));
+    classManuals.forEach(m => {
+      evals.push({
+        id: m.id,
+        title: m.title,
+        type: 'Manual',
+        date: m.date || '-',
+        maxScore: 100,
+        rawItem: m
+      });
+    });
+
+    // 3. Graded Assignments
+    const classAssigns = (assignmentFolders || []).filter(af => 
+      matchClass(af.classId) && (af.teacherId === currentTeacher.id || isMyItem(af)) && af.type === 'assignment'
+    );
+    classAssigns.forEach(a => {
+      evals.push({
+        id: a.id,
+        title: a.title,
+        type: 'Tugas',
+        date: a.createdAt ? a.createdAt.split('T')[0] : '-',
+        maxScore: 100,
+        rawItem: a
+      });
+    });
+
+    return evals;
+  };
+
+  const getStudentScoreForEvaluation = (student: Student, evalCol: { id: string; type: string; rawItem: any }) => {
+    if (evalCol.type === 'CBT') {
+      const sub = teacherSubmissions.find(s => 
+        s.examId === evalCol.id && 
+        (
+          (s.studentNis && student.nis && String(s.studentNis).trim() === String(student.nis).trim()) ||
+          ((s as any).studentId && (s as any).studentId === student.id) ||
+          (s.studentName && student.name && s.studentName.trim().toLowerCase() === student.name.trim().toLowerCase())
+        )
+      );
+      return sub != null && sub.score != null && !isNaN(Number(sub.score)) ? Number(sub.score) : null;
+    } else if (evalCol.type === 'Manual') {
+      const m = evalCol.rawItem as ManualAssessment;
+      const g = (m.grades || []).find(gr => 
+        (gr.studentNis && student.nis && String(gr.studentNis).trim() === String(student.nis).trim()) ||
+        (gr.studentId && gr.studentId === student.id) ||
+        (gr.studentName && student.name && gr.studentName.trim().toLowerCase() === student.name.trim().toLowerCase())
+      );
+      return g != null && g.score != null && !isNaN(Number(g.score)) ? Number(g.score) : null;
+    } else if (evalCol.type === 'Tugas') {
+      const sub = (assignmentSubmissions || []).find(s => 
+        (s.assignmentFolderId === evalCol.id || s.assignmentId === evalCol.id) &&
+        (
+          (s.studentNis && student.nis && String(s.studentNis).trim() === String(student.nis).trim()) ||
+          (s.studentId && s.studentId === student.id) ||
+          (s.studentName && student.name && s.studentName.trim().toLowerCase() === student.name.trim().toLowerCase())
+        )
+      );
+      return sub != null && sub.grade != null && !isNaN(Number(sub.grade)) ? Number(sub.grade) : null;
+    }
+    return null;
+  };
+
+  const exportClassRekapExcel = (classId: string) => {
+    const targetClass = classes.find(c => c.id === classId);
+    const className = targetClass ? targetClass.name : classId;
+    const subjectName = currentTeacher.subject || 'Mata Pelajaran';
+    
+    const classStudents = students
+      .filter(s => s.classId === classId || s.classId === targetClass?.name)
+      .sort((a, b) => {
+        if (a.noAbsen != null && b.noAbsen != null) return a.noAbsen - b.noAbsen;
+        if (a.noAbsen != null) return -1;
+        if (b.noAbsen != null) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+    const evals = getClassEvaluations(classId);
+
+    if (classStudents.length === 0) {
+      toast('Tidak ada data siswa di kelas ini!');
+      return;
+    }
+
+    const excelRows: Record<string, string | number>[] = [];
+
+    classStudents.forEach((student, idx) => {
+      const row: Record<string, string | number> = {
+        'No': idx + 1,
+        'No Absen': student.noAbsen || idx + 1,
+        'NIS': student.nis || '-',
+        'Nama Siswa': student.name,
+        'L/P': student.gender || '-',
+      };
+
+      const scores: number[] = [];
+      evals.forEach(ev => {
+        const score = getStudentScoreForEvaluation(student, ev);
+        row[`${ev.title} (${ev.type})`] = score != null ? score : '-';
+        if (score != null) scores.push(score);
+      });
+
+      const sum = scores.reduce((a, b) => a + b, 0);
+      const avg = scores.length > 0 ? Math.round((sum / scores.length) * 10) / 10 : 0;
+      const isPass = avg >= rekapKkm;
+
+      row['Total Nilai'] = scores.length > 0 ? sum : '-';
+      row['Rata-Rata'] = scores.length > 0 ? avg : '-';
+      row['Status Ketuntasan'] = scores.length > 0 ? (isPass ? 'Tuntas' : 'Belum Tuntas') : 'Belum Dinilai';
+
+      excelRows.push(row);
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(excelRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, `Leger Kelas ${className}`);
+    XLSX.writeFile(workbook, `Rekap_Daftar_Nilai_Kelas_${className.replace(/\s+/g, '_')}_${subjectName.replace(/\s+/g, '_')}.xlsx`);
+    toast.success(`Berhasil mengunduh Rekap Nilai Kelas ${className} (.xlsx)`);
+  };
+
+  const printClassRekapDocument = (
+    classId: string, 
+    paperSize: 'A4' | 'F4' = 'F4', 
+    orientation: 'landscape' | 'portrait' = 'landscape',
+    includeSignatures: boolean = true
+  ) => {
+    const targetClass = classes.find(c => c.id === classId || c.name === classId);
+    const className = targetClass ? targetClass.name : classId;
+    const subjectName = currentTeacher.subject || 'Mata Pelajaran';
+
+    const classStudents = students
+      .filter(s => s.classId === classId || s.classId === targetClass?.id || s.classId === targetClass?.name)
+      .sort((a, b) => {
+        if (a.noAbsen != null && b.noAbsen != null) return a.noAbsen - b.noAbsen;
+        if (a.noAbsen != null) return -1;
+        if (b.noAbsen != null) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+    const evals = getClassEvaluations(classId);
+
+    if (classStudents.length === 0) {
+      toast('Tidak ada data siswa di kelas ini!');
+      return;
+    }
+
+    const colAverages: number[] = [];
+    const colMaxs: number[] = [];
+    const colMins: number[] = [];
+    const colPassRates: number[] = [];
+
+    evals.forEach(ev => {
+      const scList = classStudents
+        .map(st => getStudentScoreForEvaluation(st, ev))
+        .filter((sc): sc is number => sc !== null);
+      
+      if (scList.length > 0) {
+        const avg = Math.round((scList.reduce((a, b) => a + b, 0) / scList.length) * 10) / 10;
+        const max = Math.max(...scList);
+        const min = Math.min(...scList);
+        const passCount = scList.filter(sc => sc >= rekapKkm).length;
+        const passRate = Math.round((passCount / scList.length) * 100);
+
+        colAverages.push(avg);
+        colMaxs.push(max);
+        colMins.push(min);
+        colPassRates.push(passRate);
+      } else {
+        colAverages.push(0);
+        colMaxs.push(0);
+        colMins.push(0);
+        colPassRates.push(0);
+      }
+    });
+
+    let pageSizeCss = 'size: A4 landscape;';
+    if (paperSize === 'F4') {
+      pageSizeCss = orientation === 'landscape' ? 'size: 330mm 215mm;' : 'size: 215mm 330mm;';
+    } else {
+      pageSizeCss = orientation === 'landscape' ? 'size: 297mm 210mm;' : 'size: 210mm 297mm;';
+    }
+
+    const studentRowsHtml = classStudents.map((st, idx) => {
+      const scores = evals.map(ev => getStudentScoreForEvaluation(st, ev));
+      const validScores = scores.filter((sc): sc is number => sc !== null);
+      const sum = validScores.reduce((a, b) => a + b, 0);
+      const avg = validScores.length > 0 ? Math.round((sum / validScores.length) * 10) / 10 : 0;
+      const isPass = validScores.length > 0 && avg >= rekapKkm;
+
+      const scoreCells = scores.map(sc => {
+        if (sc === null) return `<td style="text-align:center;color:#94a3b8;">-</td>`;
+        const pass = sc >= rekapKkm;
+        return `<td style="text-align:center;font-weight:bold;color:${pass ? '#047857' : '#be123c'};background-color:${pass ? '#f0fdf4' : '#fff1f2'};">${sc}</td>`;
+      }).join('');
+
+      return `
+        <tr>
+          <td style="text-align:center;">${idx + 1}</td>
+          <td style="text-align:center;font-family:monospace;">${st.nis || '-'}</td>
+          <td style="font-weight:bold;">${st.name}</td>
+          <td style="text-align:center;">${st.gender || '-'}</td>
+          ${scoreCells}
+          <td style="text-align:center;font-weight:bold;background-color:#f8fafc;">${validScores.length > 0 ? avg : '-'}</td>
+          <td style="text-align:center;font-weight:bold;font-size:10px;">
+            ${validScores.length === 0 ? '<span style="color:#64748b;">Belum Ada</span>' : 
+              isPass ? '<span style="color:#047857;background:#dcfce7;padding:2px 6px;border-radius:4px;border:1px solid #bbf7d0;">TUNTAS</span>' : 
+              '<span style="color:#be123c;background:#ffe4e6;padding:2px 6px;border-radius:4px;border:1px solid #fecdd3;">BELUM TUNTAS</span>'}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    const evalHeadersHtml = evals.map(ev => `
+      <th style="text-align:center;min-width:60px;">
+        <div style="font-size:10px;font-weight:bold;">${ev.title}</div>
+        <div style="font-size:8px;text-transform:uppercase;color:#4f46e5;margin-top:1px;">[${ev.type}]</div>
+      </th>
+    `).join('');
+
+    const avgFooterCells = colAverages.map(avg => `<td style="text-align:center;font-weight:bold;">${avg}</td>`).join('');
+    const maxFooterCells = colMaxs.map(max => `<td style="text-align:center;font-weight:bold;color:#047857;">${max}</td>`).join('');
+    const minFooterCells = colMins.map(min => `<td style="text-align:center;font-weight:bold;color:#be123c;">${min}</td>`).join('');
+    const passFooterCells = colPassRates.map(pr => `<td style="text-align:center;font-weight:bold;color:#0369a1;">${pr}%</td>`).join('');
+
+    const htmlDocument = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>REKAP DAFTAR NILAI - KELAS ${className}</title>
+        <style>
+          @page {
+            ${pageSizeCss}
+            margin: 10mm;
+          }
+          body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: #0f172a;
+            margin: 0;
+            padding: 10px;
+            background: #fff;
+          }
+          .header {
+            position: relative;
+            border-bottom: 3px double #0f172a;
+            padding-bottom: 10px;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 70px;
+          }
+          .header-logo {
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 64px;
+            height: 64px;
+            object-fit: contain;
+          }
+          .header-text {
+            text-align: center;
+            width: 100%;
+            padding-left: 70px;
+            padding-right: 70px;
+          }
+          .header-text h1 {
+            font-size: 15px;
+            margin: 0;
+            text-transform: uppercase;
+            color: #0f172a;
+            font-weight: bold;
+            line-height: 1.2;
+          }
+          .header-text h2 {
+            font-size: 12px;
+            margin: 2px 0 0 0;
+            color: #334155;
+            font-weight: normal;
+          }
+          .doc-title {
+            text-align: center;
+            margin-bottom: 14px;
+          }
+          .doc-title h3 {
+            margin: 0;
+            font-size: 15px;
+            text-decoration: underline;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+          .doc-title p {
+            margin: 3px 0 0 0;
+            font-size: 12px;
+            color: #475569;
+            font-weight: bold;
+          }
+          .info-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            background-color: #f8fafc;
+            padding: 6px 10px;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+          }
+          table.leger-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+            margin-bottom: 16px;
+          }
+          table.leger-table th, table.leger-table td {
+            border: 1px solid #64748b;
+            padding: 5px 6px;
+            vertical-align: middle;
+          }
+          table.leger-table th {
+            background-color: #f1f5f9;
+            color: #0f172a;
+            font-weight: bold;
+            text-transform: uppercase;
+          }
+          .footer-summary-row {
+            background-color: #f8fafc;
+          }
+          .footer-signatures {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 24px;
+            font-size: 11px;
+            page-break-inside: avoid;
+          }
+          .sign-box {
+            text-align: center;
+            width: 220px;
+          }
+          .sign-space {
+            height: 60px;
+          }
+          .btn-print {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+          }
+          @media print {
+            .no-print { display: none !important; }
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="text-align:right; margin-bottom: 12px;">
+          <button class="btn-print" onclick="window.print()">🖨️ Cetak Dokumen / Simpan ke PDF (${paperSize})</button>
+        </div>
+
+        <div class="header">
+          <img src="${SCHOOL_LOGO_BASE64}" alt="Logo Sekolah" class="header-logo" />
+          <div class="header-text">
+            <h1>${schoolIdentity.header1}</h1>
+            <h1>${schoolIdentity.header2}</h1>
+            <h1 style="font-size:18px;margin-top:2px;font-weight:bold;color:#0f172a;">${schoolIdentity.schoolName}</h1>
+            <h2>${schoolIdentity.address}</h2>
+          </div>
+        </div>
+
+        <div class="doc-title">
+          <h3>REKAPITULASI DAFTAR NILAI PEMBELAJARAN (LEGER NILAI)</h3>
+          <p>MATA PELAJARAN: ${subjectName.toUpperCase()} — KELAS: ${className.toUpperCase()}</p>
+        </div>
+
+        <div class="info-meta">
+          <div>Guru Pengampu: ${currentTeacher.name} (NIP: ${currentTeacher.nip || '-'})</div>
+          <div>Batas KKM / KKTP: ${rekapKkm}</div>
+          <div>Jumlah Evaluasi: ${evals.length} Pembelajaran</div>
+          <div>Tanggal Cetak: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+        </div>
+
+        <table class="leger-table">
+          <thead>
+            <tr>
+              <th style="width:25px;text-align:center;">No</th>
+              <th style="width:65px;text-align:center;">NIS</th>
+              <th>Nama Siswa</th>
+              <th style="width:30px;text-align:center;">L/P</th>
+              ${evalHeadersHtml || '<th style="text-align:center;">Evaluasi</th>'}
+              <th style="width:50px;text-align:center;background:#e0e7ff;color:#3730a3;">Rata<sup>2</sup></th>
+              <th style="width:75px;text-align:center;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${studentRowsHtml}
+          </tbody>
+          <tfoot>
+            <tr class="footer-summary-row" style="font-weight:bold;">
+              <td colspan="4" style="text-align:right;padding-right:10px;background:#f1f5f9;">RATA-RATA KELAS:</td>
+              ${avgFooterCells}
+              <td colspan="2" style="background:#f1f5f9;"></td>
+            </tr>
+            <tr class="footer-summary-row" style="font-weight:bold;">
+              <td colspan="4" style="text-align:right;padding-right:10px;background:#f1f5f9;">NILAI TERTINGGI:</td>
+              ${maxFooterCells}
+              <td colspan="2" style="background:#f1f5f9;"></td>
+            </tr>
+            <tr class="footer-summary-row" style="font-weight:bold;">
+              <td colspan="4" style="text-align:right;padding-right:10px;background:#f1f5f9;">NILAI TERENDAH:</td>
+              ${minFooterCells}
+              <td colspan="2" style="background:#f1f5f9;"></td>
+            </tr>
+            <tr class="footer-summary-row" style="font-weight:bold;">
+              <td colspan="4" style="text-align:right;padding-right:10px;background:#f1f5f9;">PERSENTASE KETUNTASAN:</td>
+              ${passFooterCells}
+              <td colspan="2" style="background:#f1f5f9;"></td>
+            </tr>
+          </tfoot>
+        </table>
+
+        ${includeSignatures ? `
+          <div class="footer-signatures">
+            <div class="sign-box">
+              <p>Mengetahui,<br/>Kepala ${schoolIdentity.schoolName}</p>
+              <div class="sign-space"></div>
+              <p><b><u>${schoolIdentity.principalName}</u></b><br/>NIP. ${schoolIdentity.principalNip}</p>
+            </div>
+            <div class="sign-box">
+              <p>${schoolIdentity.cityLocation}, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}<br/>Guru Mata Pelajaran,</p>
+              <div class="sign-space"></div>
+              <p><b><u>${currentTeacher.name}</u></b><br/>NIP. ${currentTeacher.nip || '-'}</p>
+            </div>
+          </div>
+        ` : ''}
+      </body>
+      </html>
+    `;
+
+    const printWin = window.open('', '_blank');
+    if (printWin) {
+      printWin.document.open();
+      printWin.document.write(htmlDocument);
+      printWin.document.close();
+      printWin.onload = () => {
+        printWin.focus();
+        printWin.print();
+      };
+    }
+  };
+
+  const printSingleStudentRaport = (studentIdOrNis: string) => {
+    const student = students.find(s => s.id === studentIdOrNis || s.nis === studentIdOrNis);
+    if (!student) {
+      toast.error('Data siswa tidak ditemukan!');
+      return;
+    }
+
+    const targetClass = classes.find(c => c.id === student.classId || c.name === student.classId || c.name === student.className);
+    const className = targetClass ? targetClass.name : (student.className || 'Kelas');
+    const subjectName = currentTeacher.subject || 'Mata Pelajaran';
+    const academicYear = schoolConfig?.academicYear || '2025/2026';
+    const semester = schoolConfig?.semester || 'Ganjil';
+
+    const evals = getClassEvaluations(student.classId || targetClass?.id || '');
+
+    const evalScores = evals.map(ev => {
+      const score = getStudentScoreForEvaluation(student, ev);
+      return {
+        title: ev.title,
+        type: ev.type,
+        score,
+        isPass: score !== null ? score >= rekapKkm : false
+      };
+    });
+
+    const validScores = evalScores.filter(e => e.score !== null).map(e => e.score as number);
+    const sum = validScores.reduce((a, b) => a + b, 0);
+    const avg = validScores.length > 0 ? Math.round((sum / validScores.length) * 10) / 10 : 0;
+    const isFinalPass = validScores.length > 0 && avg >= rekapKkm;
+
+    const evalRowsHtml = evalScores.map((ev, idx) => `
+      <tr>
+        <td style="text-align:center;width:30px;">${idx + 1}</td>
+        <td style="font-weight:bold;">${ev.title}</td>
+        <td style="text-align:center;text-transform:uppercase;font-size:10px;font-weight:bold;color:#4f46e5;">${ev.type}</td>
+        <td style="text-align:center;font-weight:bold;font-size:13px;color:${ev.score === null ? '#94a3b8' : ev.isPass ? '#047857' : '#be123c'};">${ev.score ?? '-'}</td>
+        <td style="text-align:center;font-weight:bold;">${rekapKkm}</td>
+        <td style="text-align:center;font-weight:bold;font-size:10px;">
+          ${ev.score === null ? '<span style="color:#64748b;">Belum Dinilai</span>' :
+            ev.isPass ? '<span style="color:#047857;background:#dcfce7;padding:2px 6px;border-radius:4px;border:1px solid #bbf7d0;">TUNTAS</span>' :
+            '<span style="color:#be123c;background:#ffe4e6;padding:2px 6px;border-radius:4px;border:1px solid #fecdd3;">BELUM TUNTAS</span>'}
+        </td>
+      </tr>
+    `).join('');
+
+    const htmlDoc = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>RAPORT RINGKAS - ${student.name.toUpperCase()}</title>
+        <style>
+          @page { size: A4 portrait; margin: 12mm; }
+          body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 10px; background: #fff; }
+          .no-print { text-align: right; margin-bottom: 12px; }
+          .btn-print { padding: 8px 16px; background: #4f46e5; color: white; border: none; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 13px; }
+          @media print { .no-print { display: none !important; } body { padding: 0; } }
+          .header { position: relative; border-bottom: 3px double #0f172a; padding-bottom: 10px; margin-bottom: 14px; text-align: center; }
+          .header-logo { position: absolute; left: 0; top: 0; width: 64px; height: 64px; object-fit: contain; }
+          .header h1 { font-size: 15px; margin: 0; text-transform: uppercase; font-weight: bold; }
+          .header h2 { font-size: 12px; margin: 2px 0 0 0; color: #334155; font-weight: normal; }
+          .doc-title { text-align: center; margin-bottom: 16px; }
+          .doc-title h3 { margin: 0; font-size: 16px; text-decoration: underline; text-transform: uppercase; letter-spacing: 0.5px; }
+          .doc-title p { margin: 3px 0 0 0; font-size: 11px; color: #475569; font-weight: bold; }
+          .student-card { background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 12px; line-height: 1.6; }
+          .student-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+          table.raport-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 11px; }
+          table.raport-table th, table.raport-table td { border: 1px solid #cbd5e1; padding: 7px 8px; }
+          table.raport-table th { background-color: #f1f5f9; text-transform: uppercase; font-size: 10px; }
+          .summary-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+          .sig-table { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 11px; }
+          .sig-table td { width: 33.33%; text-align: center; vertical-align: top; }
+        </style>
+      </head>
+      <body>
+        <div class="no-print">
+          <button class="btn-print" onclick="window.print()">🖨️ Cetak / Simpan PDF Raport Ringkas</button>
+        </div>
+
+        <div class="header">
+          <img src="${SCHOOL_LOGO_BASE64}" alt="Logo" class="header-logo" />
+          <h1>${schoolIdentity.header1}</h1>
+          <h1>${schoolIdentity.header2}</h1>
+          <h1 style="font-size:17px;margin-top:2px;font-weight:bold;color:#0f172a;">${schoolIdentity.schoolName}</h1>
+          <h2>${schoolIdentity.address}</h2>
+        </div>
+
+        <div class="doc-title">
+          <h3>RAPORT RINGKAS & TRANSKRIP HASIL BELAJAR</h3>
+          <p>TAHUN AJARAN ${academicYear} — SEMESTER ${semester.toUpperCase()}</p>
+        </div>
+
+        <div class="student-card">
+          <div class="student-grid">
+            <div><strong>Nama Siswa:</strong> ${student.name}</div>
+            <div><strong>Kelas:</strong> ${className}</div>
+            <div><strong>NIS / NISN:</strong> ${student.nis || '-'}</div>
+            <div><strong>Mata Pelajaran:</strong> ${subjectName}</div>
+            <div><strong>Guru Pengampu:</strong> ${currentTeacher.name} (NIP: ${currentTeacher.nip || '-'})</div>
+            <div><strong>Batas KKM / KKTP:</strong> ${rekapKkm}</div>
+          </div>
+        </div>
+
+        <table class="raport-table">
+          <thead>
+            <tr>
+              <th>No</th>
+              <th>Nama Evaluasi / Materi Pembelajaran</th>
+              <th>Kategori</th>
+              <th>Nilai</th>
+              <th>KKM</th>
+              <th>Ketuntasan</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${evalRowsHtml}
+          </tbody>
+        </table>
+
+        <div class="summary-box">
+          <div>
+            <div style="font-size:11px;color:#166534;font-weight:bold;text-transform:uppercase;">Rangkuman Capaian Pembelajaran</div>
+            <div style="font-size:18px;font-weight:900;color:#14532d;margin-top:2px;">RATA-RATA NILAI: ${avg} / 100</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:11px;color:#166534;font-weight:bold;text-transform:uppercase;">Status Capaian Akhir</div>
+            <div style="font-size:14px;font-weight:bold;padding:4px 12px;border-radius:6px;margin-top:2px;display:inline-block;${isFinalPass ? 'background:#dcfce7;color:#047857;border:1px solid #86efac;' : 'background:#ffe4e6;color:#be123c;border:1px solid #fca5a5;'}">
+              ${isFinalPass ? 'LULUS / TUNTAS SANGAT BAIK' : 'BELUM TUNTAS (PERLU REMEDIAL)'}
+            </div>
+          </div>
+        </div>
+
+        <table class="sig-table">
+          <tr>
+            <td>
+              Mengetahui,<br/>Orang Tua / Wali Siswa<br/><br/><br/><br/><br/>
+              ( ......................................... )
+            </td>
+            <td>
+              Guru Mata Pelajaran,<br/><br/><br/><br/><br/>
+              <strong><u>${currentTeacher.name}</u></strong><br/>
+              NIP. ${currentTeacher.nip || '-'}
+            </td>
+            <td>
+              Mengetahui,<br/>Kepala Sekolah<br/><br/><br/><br/><br/>
+              <strong><u>${schoolIdentity.principalName}</u></strong><br/>
+              NIP. ${schoolIdentity.principalNip}
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const printWin = window.open('', '_blank');
+    if (printWin) {
+      printWin.document.open();
+      printWin.document.write(htmlDoc);
+      printWin.document.close();
+    } else {
+      toast.error('Gagal membuka jendela cetak. Pastikan pop-up dibolehkan di peramban Anda.');
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto" id="teacher-panel-container">
@@ -3542,12 +4430,19 @@ export default function TeacherPanel({
                       schoolName: 'SMP NEGERI 1 BEJI',
                       address: 'Jl. Wicaksana No. 22A Gununggangsir Beji, Kab Pasuruan',
                       cityLocation: 'Beji, Kab. Pasuruan',
-                      principalName: 'Dr. H. Ahmad Wijaya, M.Pd.',
-                      principalNip: '19720512 199802 1 004'
+                      principalName: 'Yayuk Sudarwati, S.Pd., M.Pd.',
+                      principalNip: '197002071997032005'
                     };
                     setEditIdentityForm(defaults);
                     setSchoolIdentity(defaults);
                     localStorage.setItem('smpn1beji_school_identity', JSON.stringify(defaults));
+                    if (onUpdateSchoolConfig && schoolConfig) {
+                      onUpdateSchoolConfig({
+                        ...schoolConfig,
+                        principalName: defaults.principalName,
+                        principalNip: defaults.principalNip
+                      });
+                    }
                     toast('Identitas berhasil dikembalikan ke standar awal SMPN 1 BEJI!');
                   }}
                   className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer self-start sm:self-center"
@@ -3633,7 +4528,7 @@ export default function TeacherPanel({
                         value={editIdentityForm.principalName}
                         onChange={(e) => setEditIdentityForm({ ...editIdentityForm, principalName: e.target.value })}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        placeholder="Dr. H. Ahmad Wijaya, M.Pd."
+                        placeholder="Yayuk Sudarwati, S.Pd., M.Pd."
                         required
                       />
                     </div>
@@ -3644,7 +4539,7 @@ export default function TeacherPanel({
                         value={editIdentityForm.principalNip}
                         onChange={(e) => setEditIdentityForm({ ...editIdentityForm, principalNip: e.target.value })}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        placeholder="19720512 199802 1 004"
+                        placeholder="197002071997032005"
                         required
                       />
                     </div>
@@ -4075,6 +4970,7 @@ export default function TeacherPanel({
                 setShowAddExamModal(true);
                 setExamQuestions([]);
                 setTargetQuestionCount(10);
+                setShowScoreToStudent(true);
               }}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
@@ -4131,6 +5027,7 @@ export default function TeacherPanel({
                               setExamDuration(exam.durationMinutes);
                               setExamQuestions(exam.questions);
                               setTargetQuestionCount(Math.max(10, exam.questions.length));
+                              setShowScoreToStudent(exam.showScoreToStudent !== false);
                               setIsQuestionBankMode(false);
                               setShowAddExamModal(true);
                             }}
@@ -4149,6 +5046,7 @@ export default function TeacherPanel({
                               setExamDuration(exam.durationMinutes);
                               setExamQuestions(exam.questions);
                               setTargetQuestionCount(Math.max(10, exam.questions.length));
+                              setShowScoreToStudent(exam.showScoreToStudent !== false);
                               setIsQuestionBankMode(false);
                               setShowAddExamModal(true);
                             }}
@@ -4238,61 +5136,569 @@ export default function TeacherPanel({
         <div className="bg-white rounded-2xl border border-slate-100 shadow-xs p-6 space-y-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="font-bold text-slate-900 text-lg">Daftar Nilai Siswa</h3>
-              <p className="text-slate-500 text-xs mt-0.5">Lihat hasil pengerjaan siswa dari paket ujian dan tugas yang telah diberikan.</p>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-slate-900 text-lg">Daftar & Rekap Nilai Siswa</h3>
+                <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-2.5 py-0.5 rounded-full border border-indigo-100">
+                  Leger Pembelajaran
+                </span>
+              </div>
+              <p className="text-slate-500 text-xs mt-1">
+                Rekapitulasi nilai pembelajaran per kelas (PDF A4/F4 & Excel) serta rincian evaluasi CBT & manual.
+              </p>
             </div>
-            {(selectedExamForGrades || selectedManualAssessment) && (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => selectedExamForGrades ? exportGradesExcel(selectedExamForGrades) : exportManualGradeExcel(selectedManualAssessment)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <FileSpreadsheet className="w-4 h-4" /> Unduh Excel
-                </button>
-                <button
-                  onClick={() => selectedExamForGrades ? printGradesDocument(selectedExamForGrades) : printManualGradeDocument(selectedManualAssessment)}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Printer className="w-4 h-4" /> Cetak PDF
-                </button>
+
+            {selectedClassForGrades && (
+              <div className="flex flex-wrap items-center gap-2">
+                {gradeViewMode === 'rekap' ? (
+                  <>
+                    <button
+                      onClick={() => exportClassRekapExcel(selectedClassForGrades)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Unduh file Excel (.xlsx)"
+                    >
+                      <FileSpreadsheet className="w-4 h-4" /> Unduh Excel
+                    </button>
+                    <button
+                      onClick={() => setShowPdfPrintModal(true)}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Cetak atau simpan ke PDF (Pilihan A4 & F4)"
+                    >
+                      <Printer className="w-4 h-4" /> Cetak / PDF (A4/F4)
+                    </button>
+                    <button
+                      onClick={() => handleOpenManualForm()}
+                      className="bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs sm:text-sm px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-4 h-4" /> Input Nilai Manual
+                    </button>
+                  </>
+                ) : (selectedExamForGrades || selectedManualAssessment) ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => selectedExamForGrades ? exportGradesExcel(selectedExamForGrades) : exportManualGradeExcel(selectedManualAssessment)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <FileSpreadsheet className="w-4 h-4" /> Unduh Excel
+                    </button>
+                    <button
+                      onClick={() => selectedExamForGrades ? printGradesDocument(selectedExamForGrades) : printManualGradeDocument(selectedManualAssessment)}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Printer className="w-4 h-4" /> Cetak PDF
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
 
           <div className="space-y-4">
             {!selectedClassForGrades ? (
-              <div className="space-y-3">
-                <p className="text-sm font-bold text-slate-700">Pilih Kelas yang Anda Ajar:</p>
+              /* Class Selector View */
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-sm font-bold text-slate-700">Pilih Kelas yang Anda Ajar:</p>
+                  <span className="text-xs text-slate-500 font-medium">Total: {sortedClasses.length} Kelas</span>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {sortedClasses.map(c => {
                     const classExamsCount = teacherExams.filter(e => Array.isArray(e.classId) ? e.classId.includes(c.id) : e.classId === c.id).length;
                     const classManualCount = teacherManualAssessments.filter(m => m.classId === c.id).length;
-                    const totalItems = classExamsCount + classManualCount;
+                    const classAssignCount = (assignmentFolders || []).filter(af => af.classId === c.id && (af.teacherId === currentTeacher.id || isMyItem(af))).length;
+                    const totalItems = classExamsCount + classManualCount + classAssignCount;
+
                     return (
-                      <button
+                      <div
                         key={c.id}
-                        onClick={() => { setSelectedClassForGrades(c.id); setSelectedExamForGrades(''); }}
-                        className="p-4 bg-slate-50 border border-slate-200 rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 transition text-left flex flex-col justify-between h-full group"
+                        className="p-5 bg-slate-50 border border-slate-200 rounded-2xl hover:bg-indigo-50/50 hover:border-indigo-200 transition text-left flex flex-col justify-between h-full group shadow-2xs"
                       >
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                            <Users className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h4 className="font-extrabold text-slate-900">Kelas {c.name}</h4>
-                            <p className="text-[11px] font-bold text-slate-500 mt-0.5">{totalItems} Evaluasi ({classExamsCount} CBT, {classManualCount} Manual)</p>
+                        <div>
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-11 h-11 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform font-black">
+                              <Users className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h4 className="font-extrabold text-slate-900 text-base">Kelas {c.name}</h4>
+                              <p className="text-xs font-bold text-slate-500 mt-0.5">
+                                {totalItems} Evaluasi ({classExamsCount} CBT, {classManualCount} Manual{classAssignCount > 0 ? `, ${classAssignCount} Tugas` : ''})
+                              </p>
+                            </div>
                           </div>
                         </div>
-                        <div className="w-full text-center text-xs font-bold text-indigo-600 bg-white border border-indigo-100 py-1.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                          Lihat Daftar Nilai
+
+                        <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-200/60">
+                          <button
+                            onClick={() => {
+                              setSelectedClassForGrades(c.id);
+                              setSelectedExamForGrades('');
+                              setSelectedManualAssessment('');
+                              setGradeViewMode('rekap');
+                            }}
+                            className="w-full text-center text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 py-2 px-2 rounded-xl transition flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+                          >
+                            <BarChart3 className="w-3.5 h-3.5" /> Rekap Nilai
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedClassForGrades(c.id);
+                              setSelectedExamForGrades('');
+                              setSelectedManualAssessment('');
+                              setGradeViewMode('evaluations');
+                            }}
+                            className="w-full text-center text-xs font-bold text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-100 py-2 px-2 rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <ListTodo className="w-3.5 h-3.5" /> Evaluasi
+                          </button>
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
               </div>
             ) : (
-              <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                {/* Top Class Navigation & Mode Toggle */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        setSelectedClassForGrades('');
+                        setSelectedExamForGrades('');
+                        setSelectedManualAssessment('');
+                        setShowManualAssessmentForm(false);
+                      }}
+                      className="p-2 bg-white text-slate-600 hover:text-slate-900 rounded-xl border border-slate-200 hover:bg-slate-100 transition cursor-pointer shadow-2xs"
+                      title="Kembali ke Pilihan Kelas"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                    </button>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-extrabold text-slate-900 text-base">
+                          Kelas {classes.find(c => c.id === selectedClassForGrades)?.name || selectedClassForGrades}
+                        </h4>
+                        <span className="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-md">
+                          {currentTeacher.subject || 'Mata Pelajaran'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {students.filter(s => matchStudentClass(s, selectedClassForGrades)).length} Siswa Terdaftar • {getClassEvaluations(selectedClassForGrades).length} Evaluasi Pembelajaran
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Mode Tabs */}
+                  {!selectedExamForGrades && !selectedManualAssessment && (
+                    <div className="flex items-center bg-white p-1 rounded-xl border border-slate-200 shrink-0">
+                      <button
+                        onClick={() => {
+                          setGradeViewMode('rekap');
+                          setShowManualAssessmentForm(false);
+                          setSelectedExamForGrades('');
+                          setSelectedManualAssessment('');
+                        }}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          gradeViewMode === 'rekap'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        <BarChart3 className="w-3.5 h-3.5" /> Rekap Nilai (Leger)
+                      </button>
+                      <button
+                        onClick={() => {
+                          setGradeViewMode('evaluations');
+                          setShowManualAssessmentForm(false);
+                          setSelectedExamForGrades('');
+                          setSelectedManualAssessment('');
+                        }}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          gradeViewMode === 'evaluations'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        <ListTodo className="w-3.5 h-3.5" /> Rincian Evaluasi
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* MODE A: REKAP LEGER NILAI MATRIX */}
+                {gradeViewMode === 'rekap' && !selectedExamForGrades && !selectedManualAssessment && !showManualAssessmentForm && (
+                  <div className="space-y-6">
+                    {/* Controls Toolbar */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+                      {/* Left: Search & KKM */}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="relative">
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            placeholder="Cari nama / NIS..."
+                            value={rekapSearchQuery}
+                            onChange={(e) => setRekapSearchQuery(e.target.value)}
+                            className="pl-9 pr-3 py-1.5 text-xs font-medium border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 w-48 sm:w-56"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1">
+                          <span className="text-xs font-bold text-slate-600">KKM/KKTP:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={rekapKkm}
+                            onChange={(e) => setRekapKkm(Number(e.target.value) || 75)}
+                            className="w-12 text-center text-xs font-extrabold text-indigo-700 bg-white border border-slate-200 rounded px-1 py-0.5 focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Right: Status Filter Pills */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-slate-500 mr-1">Filter Status:</span>
+                        <button
+                          onClick={() => setRekapStatusFilter('ALL')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            rekapStatusFilter === 'ALL'
+                              ? 'bg-slate-800 text-white'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          Semua
+                        </button>
+                        <button
+                          onClick={() => setRekapStatusFilter('TUNTAS')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            rekapStatusFilter === 'TUNTAS'
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                          }`}
+                        >
+                          Tuntas (≥{rekapKkm})
+                        </button>
+                        <button
+                          onClick={() => setRekapStatusFilter('BELUM_TUNTAS')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            rekapStatusFilter === 'BELUM_TUNTAS'
+                              ? 'bg-rose-600 text-white'
+                              : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                          }`}
+                        >
+                          Belum Tuntas (&lt;{rekapKkm})
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Summary Metric Cards */}
+                    {(() => {
+                      const classSts = students.filter(s => matchStudentClass(s, selectedClassForGrades));
+                      const classEvals = getClassEvaluations(selectedClassForGrades);
+
+                      const studentAverages = classSts.map(st => {
+                        const scs = classEvals.map(ev => getStudentScoreForEvaluation(st, ev)).filter((sc): sc is number => sc !== null);
+                        const avg = scs.length > 0 ? scs.reduce((a, b) => a + b, 0) / scs.length : 0;
+                        return { student: st, avg: Math.round(avg * 10) / 10, count: scs.length };
+                      });
+
+                      const evaluatedCount = studentAverages.filter(s => s.count > 0).length;
+                      const passCount = studentAverages.filter(s => s.avg >= rekapKkm && s.count > 0).length;
+                      const passRate = evaluatedCount > 0 ? Math.round((passCount / evaluatedCount) * 100) : 0;
+
+                      const overallSum = studentAverages.reduce((acc, s) => acc + s.avg, 0);
+                      const overallAvg = evaluatedCount > 0 ? Math.round((overallSum / evaluatedCount) * 10) / 10 : 0;
+
+                      const topStudent = [...studentAverages].sort((a, b) => b.avg - a.avg)[0];
+
+                      return (
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/60 border border-indigo-200/80 p-4 rounded-2xl">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-xs font-extrabold text-indigo-800">Rata-Rata Kelas</span>
+                              <Award className="w-4 h-4 text-indigo-600" />
+                            </div>
+                            <div className="text-2xl font-black text-indigo-900">{overallAvg}</div>
+                            <p className="text-[11px] font-medium text-indigo-700/80 mt-1">Dari {classEvals.length} evaluasi pembelajaran</p>
+                          </div>
+
+                          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/80 p-4 rounded-2xl">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-xs font-extrabold text-emerald-800">Tingkat Ketuntasan</span>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            </div>
+                            <div className="text-2xl font-black text-emerald-900">{passRate}%</div>
+                            <p className="text-[11px] font-medium text-emerald-700/80 mt-1">{passCount} dari {classSts.length} siswa tuntas (≥{rekapKkm})</p>
+                          </div>
+
+                          <div className="bg-gradient-to-br from-amber-50 to-amber-100/60 border border-amber-200/80 p-4 rounded-2xl">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-xs font-extrabold text-amber-800">Nilai Tertinggi</span>
+                              <TrendingUp className="w-4 h-4 text-amber-600" />
+                            </div>
+                            <div className="text-xl font-black text-amber-900 truncate">
+                              {topStudent && topStudent.avg > 0 ? `${topStudent.avg} (${topStudent.student.name.split(' ')[0]})` : '-'}
+                            </div>
+                            <p className="text-[11px] font-medium text-amber-700/80 mt-1 truncate">
+                              {topStudent && topStudent.avg > 0 ? topStudent.student.name : 'Belum ada nilai'}
+                            </p>
+                          </div>
+
+                          <div className="bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 p-4 rounded-2xl">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-xs font-extrabold text-slate-800">Jumlah Evaluasi</span>
+                              <Layers className="w-4 h-4 text-slate-600" />
+                            </div>
+                            <div className="text-2xl font-black text-slate-900">{classEvals.length} Item</div>
+                            <p className="text-[11px] font-medium text-slate-600 mt-1">CBT, Manual & Tugas Praktikum</p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Rekap Matrix Table */}
+                    {(() => {
+                      const classEvals = getClassEvaluations(selectedClassForGrades);
+                      const allClassStudents = students
+                        .filter(s => matchStudentClass(s, selectedClassForGrades))
+                        .sort((a, b) => {
+                          if (a.noAbsen != null && b.noAbsen != null) return a.noAbsen - b.noAbsen;
+                          if (a.noAbsen != null) return -1;
+                          if (b.noAbsen != null) return 1;
+                          return a.name.localeCompare(b.name);
+                        });
+
+                      const filteredStudents = allClassStudents.filter(st => {
+                        const matchSearch = !rekapSearchQuery.trim() || 
+                          st.name.toLowerCase().includes(rekapSearchQuery.toLowerCase()) || 
+                          (st.nis && st.nis.toLowerCase().includes(rekapSearchQuery.toLowerCase()));
+
+                        if (!matchSearch) return false;
+
+                        if (rekapStatusFilter === 'ALL') return true;
+
+                        const scs = classEvals.map(ev => getStudentScoreForEvaluation(st, ev)).filter((sc): sc is number => sc !== null);
+                        const avg = scs.length > 0 ? scs.reduce((a, b) => a + b, 0) / scs.length : 0;
+
+                        if (rekapStatusFilter === 'TUNTAS') return avg >= rekapKkm && scs.length > 0;
+                        if (rekapStatusFilter === 'BELUM_TUNTAS') return avg < rekapKkm || scs.length === 0;
+
+                        return true;
+                      });
+
+                      if (allClassStudents.length === 0) {
+                        return (
+                          <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                            <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                            <p className="text-slate-600 font-bold text-sm">Belum Ada Siswa Terdaftar di Kelas Ini</p>
+                            <p className="text-slate-400 text-xs mt-1">Tambahkan data siswa melalui menu Master Data Siswa.</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-xs">
+                              <thead>
+                                <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider">
+                                  <th className="py-3 px-3 text-center border-r border-slate-200 w-10">No</th>
+                                  <th className="py-3 px-3 border-r border-slate-200 w-24">NIS</th>
+                                  <th className="py-3 px-4 border-r border-slate-200 min-w-[180px]">Nama Siswa</th>
+                                  <th className="py-3 px-2 text-center border-r border-slate-200 w-12">L/P</th>
+
+                                  {classEvals.map(ev => (
+                                    <th key={ev.id} className="py-3 px-3 border-r border-slate-200 text-center min-w-[110px]">
+                                      <div className="truncate text-slate-900 font-extrabold" title={ev.title}>{ev.title}</div>
+                                      <div className="flex items-center justify-center gap-1 mt-0.5">
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                          ev.type === 'CBT' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
+                                          ev.type === 'Manual' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                                          'bg-amber-100 text-amber-800 border border-amber-200'
+                                        }`}>
+                                          {ev.type}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 font-normal">{ev.date}</span>
+                                      </div>
+                                    </th>
+                                  ))}
+
+                                  <th className="py-3 px-3 text-center border-r border-slate-200 bg-indigo-50/70 text-indigo-950 font-black min-w-[80px]">
+                                    Rata-Rata
+                                  </th>
+                                  <th className="py-3 px-3 text-center border-r border-slate-200 font-black min-w-[100px]">
+                                    Status
+                                  </th>
+                                  <th className="py-3 px-3 text-center font-black min-w-[90px]">
+                                    Cetak
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {filteredStudents.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={4 + classEvals.length + 3} className="text-center py-8 text-slate-500 italic">
+                                      Tidak ada siswa yang cocok dengan kriteria pencarian / filter.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  filteredStudents.map((student, idx) => {
+                                    const scores = classEvals.map(ev => getStudentScoreForEvaluation(student, ev));
+                                    const validScores = scores.filter((sc): sc is number => sc !== null);
+                                    const sum = validScores.reduce((a, b) => a + b, 0);
+                                    const avg = validScores.length > 0 ? Math.round((sum / validScores.length) * 10) / 10 : 0;
+                                    const max = validScores.length > 0 ? Math.max(...validScores) : 0;
+                                    const min = validScores.length > 0 ? Math.min(...validScores) : 0;
+                                    const isPass = validScores.length > 0 && avg >= rekapKkm;
+
+                                    return (
+                                      <tr key={student.id} className="hover:bg-slate-50/80 transition-colors">
+                                        <td className="py-2.5 px-3 text-center border-r border-slate-100 font-medium text-slate-500">
+                                          {student.noAbsen || idx + 1}
+                                        </td>
+                                        <td className="py-2.5 px-3 border-r border-slate-100 font-mono text-slate-600 text-[11px]">
+                                          {student.nis || '-'}
+                                        </td>
+                                        <td className="py-2.5 px-4 border-r border-slate-100 font-bold text-slate-900">
+                                          {student.name}
+                                        </td>
+                                        <td className="py-2.5 px-2 text-center border-r border-slate-100 text-slate-500 font-medium">
+                                          {student.gender || '-'}
+                                        </td>
+
+                                        {scores.map((sc, i) => {
+                                          if (sc === null) {
+                                            return (
+                                              <td key={i} className="py-2.5 px-3 text-center border-r border-slate-100 text-slate-300 font-bold">
+                                                -
+                                              </td>
+                                            );
+                                          }
+                                          const pass = sc >= rekapKkm;
+                                          return (
+                                            <td key={i} className="py-2.5 px-3 text-center border-r border-slate-100 font-extrabold">
+                                              <span className={`inline-block w-full py-1 px-1 rounded-md ${
+                                                pass ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
+                                              }`}>
+                                                {sc}
+                                              </span>
+                                            </td>
+                                          );
+                                        })}
+
+                                        <td className="py-2.5 px-3 text-center border-r border-slate-100 font-black text-indigo-900 bg-indigo-50/30">
+                                          {validScores.length > 0 ? avg : '-'}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-center">
+                                          {validScores.length === 0 ? (
+                                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                                              Belum Ada
+                                            </span>
+                                          ) : isPass ? (
+                                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                              <CheckCircle2 className="w-3 h-3" /> Tuntas
+                                            </span>
+                                          ) : (
+                                            <span className="text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                              <XCircle className="w-3 h-3" /> Belum
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-center">
+                                          <button
+                                            type="button"
+                                            onClick={() => printSingleStudentRaport(student.id)}
+                                            title="Cetak Raport Ringkas PDF untuk siswa ini"
+                                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg transition text-[10px] font-extrabold flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                                          >
+                                            <Printer className="w-3 h-3" /> Raport
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+
+                              {allClassStudents.length > 0 && (
+                                <tfoot className="bg-slate-50 border-t-2 border-slate-200 font-bold">
+                                  <tr>
+                                    <td colSpan={4} className="py-2.5 px-4 text-right border-r border-slate-200 text-slate-700 font-extrabold text-[11px]">
+                                      RATA-RATA KELAS:
+                                    </td>
+                                    {classEvals.map(ev => {
+                                      const scList = allClassStudents.map(st => getStudentScoreForEvaluation(st, ev)).filter((sc): sc is number => sc !== null);
+                                      const colAvg = scList.length > 0 ? Math.round((scList.reduce((a, b) => a + b, 0) / scList.length) * 10) / 10 : 0;
+                                      return (
+                                        <td key={ev.id} className="py-2.5 px-3 text-center border-r border-slate-200 text-slate-900 font-extrabold">
+                                          {scList.length > 0 ? colAvg : '-'}
+                                        </td>
+                                      );
+                                    })}
+                                    <td colSpan={2} className="bg-slate-100/50"></td>
+                                  </tr>
+
+                                  <tr>
+                                    <td colSpan={4} className="py-2 px-4 text-right border-r border-slate-200 text-emerald-700 font-extrabold text-[11px]">
+                                      NILAI TERTINGGI:
+                                    </td>
+                                    {classEvals.map(ev => {
+                                      const scList = allClassStudents.map(st => getStudentScoreForEvaluation(st, ev)).filter((sc): sc is number => sc !== null);
+                                      const colMax = scList.length > 0 ? Math.max(...scList) : 0;
+                                      return (
+                                        <td key={ev.id} className="py-2 px-3 text-center border-r border-slate-200 text-emerald-700 font-extrabold">
+                                          {scList.length > 0 ? colMax : '-'}
+                                        </td>
+                                      );
+                                    })}
+                                    <td colSpan={2} className="bg-slate-100/50"></td>
+                                  </tr>
+
+                                  <tr>
+                                    <td colSpan={4} className="py-2 px-4 text-right border-r border-slate-200 text-rose-700 font-extrabold text-[11px]">
+                                      NILAI TERENDAH:
+                                    </td>
+                                    {classEvals.map(ev => {
+                                      const scList = allClassStudents.map(st => getStudentScoreForEvaluation(st, ev)).filter((sc): sc is number => sc !== null);
+                                      const colMin = scList.length > 0 ? Math.min(...scList) : 0;
+                                      return (
+                                        <td key={ev.id} className="py-2 px-3 text-center border-r border-slate-200 text-rose-700 font-extrabold">
+                                          {scList.length > 0 ? colMin : '-'}
+                                        </td>
+                                      );
+                                    })}
+                                    <td colSpan={2} className="bg-slate-100/50"></td>
+                                  </tr>
+
+                                  <tr>
+                                    <td colSpan={4} className="py-2.5 px-4 text-right border-r border-slate-200 text-indigo-800 font-extrabold text-[11px]">
+                                      PERSENTASE KETUNTASAN (%):
+                                    </td>
+                                    {classEvals.map(ev => {
+                                      const scList = allClassStudents.map(st => getStudentScoreForEvaluation(st, ev)).filter((sc): sc is number => sc !== null);
+                                      const passCount = scList.filter(sc => sc >= rekapKkm).length;
+                                      const passRate = scList.length > 0 ? Math.round((passCount / scList.length) * 100) : 0;
+                                      return (
+                                        <td key={ev.id} className="py-2.5 px-3 text-center border-r border-slate-200 text-indigo-700 font-black">
+                                          {scList.length > 0 ? `${passRate}%` : '-'}
+                                        </td>
+                                      );
+                                    })}
+                                    <td colSpan={2} className="bg-slate-100/50"></td>
+                                  </tr>
+                                </tfoot>
+                              )}
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* MODE B: RINCIAN PER EVALUASI */}
+                {(showManualAssessmentForm || gradeViewMode === 'evaluations' || selectedExamForGrades || selectedManualAssessment) && (
+                  <>
                 {showManualAssessmentForm ? (
                   <div className="space-y-4 bg-white p-5 rounded-2xl border border-slate-200">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -4518,15 +5924,33 @@ export default function TeacherPanel({
                   </div>
                 ) : selectedExamForGrades ? (
                   <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="flex items-center gap-3 bg-slate-50 px-4 py-3 rounded-xl border border-slate-200">
-                      <button
-                        onClick={() => setSelectedExamForGrades('')}
-                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5 bg-white border border-indigo-100 px-3 py-1.5 rounded-lg transition cursor-pointer"
-                      >
-                        ← Kembali
-                      </button>
-                      <div className="h-4 w-px bg-slate-300"></div>
-                      <h4 className="font-bold text-slate-800 text-sm">{teacherExams.find(e => e.id === selectedExamForGrades)?.title}</h4>
+                    <div className="flex items-center justify-between gap-3 bg-slate-50 px-4 py-3 rounded-xl border border-slate-200">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setSelectedExamForGrades('')}
+                          className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5 bg-white border border-indigo-100 px-3 py-1.5 rounded-lg transition cursor-pointer"
+                        >
+                          ← Kembali
+                        </button>
+                        <div className="h-4 w-px bg-slate-300"></div>
+                        <h4 className="font-bold text-slate-800 text-sm">{teacherExams.find(e => e.id === selectedExamForGrades)?.title}</h4>
+                      </div>
+                      {onDeleteExam && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentExamObj = teacherExams.find(e => e.id === selectedExamForGrades);
+                            if (currentExamObj) {
+                              setItemToDelete({ id: currentExamObj.id, type: 'Ujian', name: currentExamObj.title });
+                              setSelectedExamForGrades('');
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer"
+                          title="Hapus Ujian / Tugas CBT"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Hapus Ujian
+                        </button>
+                      )}
                     </div>
                     
                     <div className="overflow-x-auto border border-slate-200 rounded-xl">
@@ -4535,20 +5959,25 @@ export default function TeacherPanel({
                           <tr>
                             <th className="px-4 py-3 font-bold w-12 text-center">No</th>
                             <th className="px-4 py-3 font-bold">NIS</th>
-                            <th className="px-4 py-3 font-bold w-1/3">Nama Siswa</th>
-                            <th className="px-4 py-3 font-bold text-center">Nilai</th>
+                            <th className="px-4 py-3 font-bold w-1/4">Nama Siswa</th>
+                            <th className="px-4 py-3 font-bold text-center">Nilai Final</th>
+                            <th className="px-4 py-3 font-bold text-center">Status Koreksi Uraian</th>
                             <th className="px-4 py-3 font-bold text-center">Waktu Pengerjaan</th>
+                            <th className="px-4 py-3 font-bold text-center">Aksi Penilaian</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {teacherSubmissions.filter(s => s.examId === selectedExamForGrades).length === 0 ? (
                             <tr>
-                              <td colSpan={5} className="px-4 py-8 text-center text-slate-500 text-sm italic">
+                              <td colSpan={7} className="px-4 py-8 text-center text-slate-500 text-sm italic">
                                 Belum ada siswa yang mengumpulkan tugas/ujian ini.
                               </td>
                             </tr>
-                          ) : (
-                            teacherSubmissions
+                          ) : (() => {
+                            const currentExamObj = teacherExams.find(e => e.id === selectedExamForGrades);
+                            const hasEssayQuestions = currentExamObj?.questions.some(q => q.type === 'Uraian');
+
+                            return teacherSubmissions
                               .filter(s => s.examId === selectedExamForGrades)
                               .sort(sortSubmissions)
                               .map((s, idx) => (
@@ -4561,12 +5990,37 @@ export default function TeacherPanel({
                                       {s.score}
                                     </span>
                                   </td>
+                                  <td className="px-4 py-3 text-center">
+                                    {!hasEssayQuestions ? (
+                                      <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2.5 py-1 rounded-lg">
+                                        Hanya Objektif
+                                      </span>
+                                    ) : s.essayGraded ? (
+                                      <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-extrabold px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                                        <CheckCircle className="w-3 h-3 text-emerald-600" /> Sudah Dinilai (Leger Synced)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] bg-amber-50 text-amber-900 border border-amber-200 font-extrabold px-2.5 py-1 rounded-lg inline-flex items-center gap-1 animate-pulse">
+                                        <AlertCircle className="w-3 h-3 text-amber-600" /> Perlu Penilaian Uraian
+                                      </span>
+                                    )}
+                                  </td>
                                   <td className="px-4 py-3 text-center text-xs text-slate-500">
                                     {new Date(s.submittedAt).toLocaleString('id-ID')}
                                   </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEssayGradingModal(s)}
+                                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition shadow-2xs inline-flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                      {hasEssayQuestions ? 'Koreksi & Beri Nilai Uraian' : 'Koreksi / Edit Nilai'}
+                                    </button>
+                                  </td>
                                 </tr>
-                              ))
-                          )}
+                              ));
+                          })()}
                         </tbody>
                       </table>
                     </div>
@@ -4599,20 +6053,42 @@ export default function TeacherPanel({
                           {teacherExams.filter(e => Array.isArray(e.classId) ? e.classId.includes(selectedClassForGrades) : e.classId === selectedClassForGrades).map(exam => {
                             const submissionCount = teacherSubmissions.filter(s => s.examId === exam.id).length;
                             return (
-                              <button
+                              <div
                                 key={exam.id}
-                                onClick={() => setSelectedExamForGrades(exam.id)}
-                                className="p-4 bg-white border border-slate-200 rounded-2xl hover:border-indigo-300 hover:shadow-md transition text-left space-y-2 flex flex-col justify-between cursor-pointer"
+                                className="p-4 bg-white border border-slate-200 rounded-2xl hover:border-indigo-300 hover:shadow-md transition text-left space-y-2 flex flex-col justify-between group"
                               >
                                 <div>
-                                  <h5 className="font-extrabold text-slate-900">{exam.title}</h5>
-                                  <p className="text-xs text-slate-500 mt-1">{getSubjectName(exam.subjectId)}</p>
+                                  <div className="flex justify-between items-start gap-2">
+                                    <div>
+                                      <h5 className="font-extrabold text-slate-900">{exam.title}</h5>
+                                      <p className="text-xs text-slate-500 mt-1">{getSubjectName(exam.subjectId)}</p>
+                                    </div>
+                                    {onDeleteExam && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setItemToDelete({ id: exam.id, type: 'Ujian', name: exam.title });
+                                        }}
+                                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition cursor-pointer shrink-0"
+                                        title="Hapus Ujian / Tugas CBT"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="flex justify-between items-center w-full mt-4 pt-3 border-t border-slate-100">
                                   <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">{submissionCount} Siswa Mengerjakan</span>
-                                  <span className="text-[11px] font-bold text-indigo-600 flex items-center gap-1">Lihat Nilai <FileText className="w-3.5 h-3.5" /></span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedExamForGrades(exam.id)}
+                                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                                  >
+                                    Lihat Nilai <FileText className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
-                              </button>
+                              </div>
                             );
                           })}
                         </div>
@@ -4665,9 +6141,219 @@ export default function TeacherPanel({
                       )}
                     </div>
 
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2 border-b border-slate-200 pb-2">
+                        <FolderPlus className="w-4 h-4 text-blue-600" /> Tugas Google Drive / Berkas
+                      </h4>
+                      {(() => {
+                        const classGDriveTasks = (assignmentFolders || []).filter(af =>
+                          af.type === 'assignment' &&
+                          (af.classId === selectedClassForGrades || (classes.find(c => c.id === selectedClassForGrades)?.name === af.classId)) &&
+                          (af.teacherId === currentTeacher.id || isMyItem(af))
+                        );
+
+                        if (classGDriveTasks.length === 0) {
+                          return <p className="text-sm text-slate-500 italic">Belum ada tugas Google Drive di kelas ini.</p>;
+                        }
+
+                        return (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {classGDriveTasks.map(task => {
+                              const subCount = (assignmentSubmissions || []).filter(s => s.assignmentFolderId === task.id || s.assignmentId === task.id).length;
+                              const isSynced = teacherManualAssessments.some(m =>
+                                (m.classId === task.classId || m.classId === selectedClassForGrades) &&
+                                (m.title === `[Tugas GDrive] ${task.title}` || m.title === task.title)
+                              );
+
+                              return (
+                                <div
+                                  key={task.id}
+                                  className="p-4 bg-white border border-slate-200 rounded-2xl hover:border-blue-300 hover:shadow-md transition text-left space-y-2 flex flex-col justify-between group"
+                                >
+                                  <div>
+                                    <div className="flex justify-between items-start gap-2">
+                                      <div>
+                                        <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full inline-block mb-1">
+                                          Google Drive
+                                        </span>
+                                        <h5 className="font-extrabold text-slate-900">{task.title}</h5>
+                                        <p className="text-xs text-slate-500 mt-0.5">{getSubjectName(task.subjectId)}</p>
+                                      </div>
+                                      {isSynced && (
+                                        <span className="text-[10px] font-black text-emerald-800 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
+                                          <CheckCircle className="w-3 h-3 text-emerald-600" /> Leger Synced
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex justify-between items-center w-full mt-4 pt-3 border-t border-slate-100">
+                                    <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">
+                                      {subCount} Siswa Mengumpulkan
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedSubmissionsAssign(task)}
+                                      className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                                    >
+                                      Lihat / Input Nilai <FileText className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
                   </div>
-                )}              </div>
+                )}
+                </>
+              )}
+              </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* PDF PRINT SETUP MODAL */}
+      {showPdfPrintModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-6">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-900 text-base">Cetak Rekap Leger Nilai</h4>
+                  <p className="text-xs text-slate-500">Pengaturan format kertas & layout dokumen</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPdfPrintModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Paper Size Selection */}
+              <div>
+                <label className="block font-bold text-slate-800 mb-2">Ukuran Kertas Print / PDF:</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPdfPaperSize('F4')}
+                    className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      pdfPaperSize === 'F4'
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-extrabold shadow-2xs ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-bold text-sm">F4 / Folio</span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Rekomendasi</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-normal">215 x 330 mm (Standar Sekolah)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPdfPaperSize('A4')}
+                    className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      pdfPaperSize === 'A4'
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-extrabold shadow-2xs ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-bold text-sm">A4</span>
+                      <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">Standar</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-normal">210 x 297 mm</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Orientation Selection */}
+              <div>
+                <label className="block font-bold text-slate-800 mb-2">Orientasi Halaman:</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPdfOrientation('landscape')}
+                    className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
+                      pdfOrientation === 'landscape'
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-extrabold shadow-2xs ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="font-bold text-sm">Lanskap (Horizontal)</div>
+                    <div className="text-[10px] text-slate-500 font-normal mt-0.5">Terbaik untuk tabel banyak kolom</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPdfOrientation('portrait')}
+                    className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
+                      pdfOrientation === 'portrait'
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-extrabold shadow-2xs ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="font-bold text-sm">Potret (Vertikal)</div>
+                    <div className="text-[10px] text-slate-500 font-normal mt-0.5">Tampilan tegak standar</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Options */}
+              <div className="pt-2 border-t border-slate-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-700">Target Batas KKM / KKTP:</span>
+                  <input
+                    type="number"
+                    value={rekapKkm}
+                    onChange={(e) => setRekapKkm(Number(e.target.value) || 75)}
+                    className="w-16 text-center font-extrabold text-indigo-700 border border-slate-200 rounded-lg py-1 px-2 focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={pdfIncludeSignatures}
+                    onChange={(e) => setPdfIncludeSignatures(e.target.checked)}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                  />
+                  <span>Sertakan Kolom Tanda Tangan (Kepala Sekolah & Guru)</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowPdfPrintModal(false)}
+                className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPdfPrintModal(false);
+                  printClassRekapDocument(selectedClassForGrades, pdfPaperSize, pdfOrientation, pdfIncludeSignatures);
+                }}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" /> Cetak / Buka Preview Dokumen
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -5194,107 +6880,311 @@ export default function TeacherPanel({
 
           {/* B. MENU KELENGKAPAN: JADWAL MENGAJAR & CATATAN KELAS PRIBADI */}
           <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 sm:p-8 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
               <div>
                 <h3 className="text-lg font-black text-slate-900 flex items-center gap-2.5">
-                  <Calendar className="w-6 h-6 text-indigo-600" /> Agenda Jadwal Mengajar & Catatan Kelas Guru Mapel
+                  <Calendar className="w-6 h-6 text-indigo-600" /> Jadwal Mengajar & Catatan Agenda Kelas Guru Mapel
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Catat hari, jam pelajaran, ruangan, dan agenda khusus di tiap kelas. Anda dapat mengedit perubahan jadwal sewaktu-waktu jika ada pergeseran jam atau tugas kelas.
+                  Pilih tampilan tersendiri antara <span className="font-bold text-indigo-700">Jadwal Mengajar Guru</span> dan <span className="font-bold text-amber-700">Agenda Catatan Kelas Guru Mapel</span>.
                 </p>
               </div>
+
               <button
                 type="button"
                 onClick={handleOpenAddSchedule}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition flex items-center gap-2 shrink-0 cursor-pointer"
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-md hover:shadow-lg transition flex items-center gap-2 shrink-0 cursor-pointer self-start md:self-auto"
               >
-                <Plus className="w-4 h-4" /> Tambah Jadwal & Catatan Baru
+                <Plus className="w-4 h-4" />
+                {scheduleViewMode === 'agenda' ? 'Tambah Catatan Agenda Baru' : 'Tambah Jadwal Mengajar Baru'}
               </button>
             </div>
 
-            {/* Filter Hari */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-100">
-              {(['Semua', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jum\'at', 'Sabtu']).map((d) => (
+            {/* TAB SELECTOR MODES */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-200/80">
+              <div className="flex items-center gap-2 overflow-x-auto p-1">
                 <button
-                  key={d}
-                  onClick={() => setSelectedDayFilter(d)}
-                  className={`px-4 py-2 rounded-xl text-xs font-extrabold transition shrink-0 cursor-pointer ${
-                    selectedDayFilter === d
+                  type="button"
+                  onClick={() => setScheduleViewMode('jadwal')}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shrink-0 ${
+                    scheduleViewMode === 'jadwal'
                       ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/60'
                   }`}
                 >
-                  {d === 'Semua' ? '📅 Semua Hari' : d}
+                  <Calendar className="w-4 h-4 text-indigo-300" /> 📅 Tampilan Jadwal Mengajar
                 </button>
-              ))}
+
+                <button
+                  type="button"
+                  onClick={() => setScheduleViewMode('agenda')}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shrink-0 ${
+                    scheduleViewMode === 'agenda'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/60'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4 text-amber-300" /> 📝 Catatan & Agenda Kelas Guru Mapel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setScheduleViewMode('semua')}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shrink-0 ${
+                    scheduleViewMode === 'semua'
+                      ? 'bg-slate-800 text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/60'
+                  }`}
+                >
+                  <ListTodo className="w-4 h-4 text-slate-300" /> 📋 Tampilan Terpadu (Lengkap)
+                </button>
+              </div>
+
+              <div className="text-xs font-bold text-slate-500 px-3 py-1 bg-white rounded-xl border border-slate-200/60 self-end sm:self-auto shrink-0">
+                Total: <span className="text-indigo-600 font-black">{myScheduleNotes.length}</span> Entri
+              </div>
             </div>
 
-            {/* Grid Kartu Jadwal & Note */}
-            {myScheduleNotes.filter(n => selectedDayFilter === 'Semua' || n.day === selectedDayFilter).length === 0 ? (
-              <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <h4 className="font-bold text-slate-700 text-sm">Belum Ada Catatan Jadwal Mengajar</h4>
-                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                  Tambahkan jadwal hari dan jam mengajar kelas Anda dengan mengklik tombol Tambah Jadwal di kanan atas.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {myScheduleNotes
-                  .filter(n => selectedDayFilter === 'Semua' || n.day === selectedDayFilter)
-                  .map((note) => (
-                    <div
-                      key={note.id}
-                      className="bg-gradient-to-br from-white to-slate-50/80 border border-slate-200/80 rounded-2xl p-5 shadow-2xs hover:shadow-md transition flex flex-col justify-between space-y-4"
-                    >
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="px-3 py-1 bg-indigo-100 text-indigo-800 font-black text-xs rounded-lg uppercase tracking-wide flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-indigo-600" /> {note.day}
-                          </span>
-                          <span className="text-[11px] font-bold text-slate-600 bg-slate-200/70 px-2.5 py-1 rounded-md">
-                            {note.jamKe}
-                          </span>
-                        </div>
-
-                        <div>
-                          <h4 className="text-base font-black text-slate-900 flex items-center gap-1.5">
-                            <Building className="w-4 h-4 text-indigo-600 shrink-0" /> Kelas : {note.className}
-                          </h4>
-                          {note.room && (
-                            <p className="text-xs text-slate-500 font-medium mt-1 flex items-center gap-1.5">
-                              <MapPin className="w-3.5 h-3.5 text-slate-400" /> {note.room}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="bg-amber-50/70 border border-amber-200/60 rounded-xl p-3 text-xs text-slate-700">
-                          <span className="font-extrabold text-amber-900 block mb-1 text-[11px] uppercase tracking-wider flex items-center gap-1">
-                            📌 Catatan & Agenda KBM:
-                          </span>
-                          <p className="leading-relaxed whitespace-pre-wrap">{note.note || 'Tidak ada catatan khusus.'}</p>
-                        </div>
-                      </div>
-
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditSchedule(note)}
-                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" /> Edit Jadwal & Catatan
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteScheduleNote(note.id)}
-                          className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold transition cursor-pointer"
-                          title="Hapus Jadwal"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+            {/* MODE 1: TAMPILAN KHUSUS JADWAL MENGAJAR GURU */}
+            {(scheduleViewMode === 'jadwal' || scheduleViewMode === 'semua') && (
+              <div className="space-y-4 pt-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-2xs">
+                      <Calendar className="w-4 h-4" />
                     </div>
-                  ))}
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm">📅 Tampilan Khusus Jadwal Mengajar Guru</h4>
+                      <p className="text-[11px] text-slate-500">Matriks jam dan lokasi mengajar resmi per hari.</p>
+                    </div>
+                  </div>
+
+                  {/* Filter Hari */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                    {(['Semua', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jum\'at', 'Sabtu']).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setSelectedDayFilter(d)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition shrink-0 cursor-pointer ${
+                          selectedDayFilter === d
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/60'
+                        }`}
+                      >
+                        {d === 'Semua' ? 'Semua Hari' : d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Grid Cards Jadwal Mengajar */}
+                {myScheduleNotes.filter(n => selectedDayFilter === 'Semua' || n.day === selectedDayFilter).length === 0 ? (
+                  <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                    <h4 className="font-bold text-slate-700 text-xs">Belum Ada Jadwal Mengajar Ditambahkan</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5 max-w-xs mx-auto">
+                      Klik tombol Tambah Jadwal Mengajar Baru di atas untuk mengatur waktu dan kelas mengajar Anda.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {myScheduleNotes
+                      .filter(n => selectedDayFilter === 'Semua' || n.day === selectedDayFilter)
+                      .map((note) => (
+                        <div
+                          key={note.id}
+                          className="bg-white border border-indigo-100 rounded-2xl p-4 shadow-2xs hover:shadow-md transition flex flex-col justify-between space-y-3 relative overflow-hidden"
+                        >
+                          <div className="absolute top-0 right-0 w-16 h-16 bg-indigo-500/5 rounded-bl-full pointer-events-none" />
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="px-2.5 py-1 bg-indigo-600 text-white font-black text-[11px] rounded-lg uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                                <Clock className="w-3 h-3" /> {note.day}
+                              </span>
+                              <span className="text-[11px] font-extrabold text-indigo-900 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-md">
+                                {note.jamKe}
+                              </span>
+                            </div>
+
+                            <div>
+                              <h4 className="text-base font-black text-slate-900 flex items-center gap-1.5">
+                                <Building className="w-4 h-4 text-indigo-600 shrink-0" /> Kelas : {note.className}
+                              </h4>
+                              {note.room ? (
+                                <p className="text-xs text-slate-500 font-medium mt-1 flex items-center gap-1.5">
+                                  <MapPin className="w-3.5 h-3.5 text-slate-400" /> {note.room}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-400 font-normal mt-1 flex items-center gap-1.5">
+                                  <MapPin className="w-3.5 h-3.5 text-slate-300" /> Ruang Kelas Standar
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Badge Catatan Check */}
+                            <div className="pt-1">
+                              {note.note && note.note.trim() ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-md">
+                                  <CheckCircle className="w-3 h-3 text-amber-600" /> Ada Catatan Agenda KBM
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 bg-slate-50 border border-slate-200/60 px-2 py-0.5 rounded-md">
+                                  Tanpa Catatan Khusus
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleOpenEditSchedule(note);
+                              }}
+                              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" /> Edit Jadwal
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteScheduleNote(note.id)}
+                              className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold transition cursor-pointer"
+                              title="Hapus Jadwal"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SEPARATOR BILA MODE SEMUA */}
+            {scheduleViewMode === 'semua' && (
+              <div className="border-t border-dashed border-slate-200 my-6" />
+            )}
+
+            {/* MODE 2: TAMPILAN KHUSUS AGENDA & CATATAN KELAS GURU MAPEL */}
+            {(scheduleViewMode === 'agenda' || scheduleViewMode === 'semua') && (
+              <div className="space-y-4 pt-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-50/60 p-4 rounded-2xl border border-amber-200/70">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-amber-600 text-white rounded-xl shadow-2xs">
+                      <BookOpen className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm">📝 Tampilan Agenda & Catatan Kelas Guru Mapel</h4>
+                      <p className="text-[11px] text-slate-500">Agendas KBM, target materi, dan catatan penting per kelas.</p>
+                    </div>
+                  </div>
+
+                  {/* Filter Kelas & Hari */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Select Filter Kelas */}
+                    <select
+                      value={selectedClassFilterForAgenda}
+                      onChange={(e) => setSelectedClassFilterForAgenda(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-800 shadow-2xs focus:outline-hidden"
+                    >
+                      <option value="Semua">🏫 Semua Kelas</option>
+                      {sortedClasses.map(c => (
+                        <option key={c.id} value={c.name}>Kelas {c.name}</option>
+                      ))}
+                    </select>
+
+                    {/* Filter Hari */}
+                    <select
+                      value={selectedDayFilter}
+                      onChange={(e) => setSelectedDayFilter(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-amber-200 rounded-xl text-xs font-bold text-slate-800 shadow-2xs focus:outline-hidden"
+                    >
+                      <option value="Semua">📅 Semua Hari</option>
+                      {['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jum\'at', 'Sabtu'].map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Grid Cards Agenda & Catatan KBM */}
+                {myScheduleNotes.filter(n => 
+                  (selectedDayFilter === 'Semua' || n.day === selectedDayFilter) &&
+                  (selectedClassFilterForAgenda === 'Semua' || n.className === selectedClassFilterForAgenda)
+                ).length === 0 ? (
+                  <div className="text-center py-10 bg-amber-50/30 rounded-2xl border border-dashed border-amber-200">
+                    <BookOpen className="w-10 h-10 text-amber-300 mx-auto mb-2" />
+                    <h4 className="font-bold text-slate-700 text-xs">Belum Ada Catatan Agenda Pembelajaran</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5 max-w-xs mx-auto">
+                      Pilih jadwal lalu tambahkan Catatan & Agenda KBM untuk kelas yang bersangkutan.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {myScheduleNotes
+                      .filter(n => 
+                        (selectedDayFilter === 'Semua' || n.day === selectedDayFilter) &&
+                        (selectedClassFilterForAgenda === 'Semua' || n.className === selectedClassFilterForAgenda)
+                      )
+                      .map((note) => (
+                        <div
+                          key={note.id}
+                          className="bg-white border border-amber-200/80 rounded-2xl p-5 shadow-2xs hover:shadow-md transition flex flex-col justify-between space-y-4"
+                        >
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2 border-b border-amber-100 pb-2.5">
+                              <div className="flex items-center gap-2">
+                                <span className="px-2.5 py-1 bg-amber-500 text-white font-black text-xs rounded-lg uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                                  <Building className="w-3.5 h-3.5" /> Kelas {note.className}
+                                </span>
+                                {note.room && (
+                                  <span className="text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                                    {note.room}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
+                                <span>{note.day}</span>
+                                <span>•</span>
+                                <span className="text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded">{note.jamKe}</span>
+                              </div>
+                            </div>
+
+                            {/* Box Catatan KBM */}
+                            <div className="bg-gradient-to-br from-amber-50/80 to-orange-50/30 border border-amber-200/70 rounded-xl p-3.5 text-xs text-slate-800 space-y-1.5">
+                              <span className="font-black text-amber-950 block text-[11px] uppercase tracking-wider flex items-center gap-1">
+                                📌 Agenda KBM & Catatan Guru Mapel:
+                              </span>
+                              <p className="leading-relaxed whitespace-pre-wrap font-medium">
+                                {note.note || 'Belum ada isi catatan agenda khusus untuk kelas ini.'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditSchedule(note)}
+                              className="px-3.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-amber-200/60"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-amber-700" /> Edit Agenda & Catatan
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteScheduleNote(note.id)}
+                              className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold transition cursor-pointer"
+                              title="Hapus Agenda"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -5430,7 +7320,7 @@ export default function TeacherPanel({
                   className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-sm"
                 >
                   <option value="">-- Semua Kelas --</option>
-                  {classes.map(c => (
+                  {sortedClasses.map(c => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
@@ -6679,21 +8569,40 @@ export default function TeacherPanel({
                 )}
               </div>
 
-              {/* Subject Selection for Exam */}
+              {/* Subject Selection & Display Score Settings for Exam */}
               {!isQuestionBankMode && (
-                <div className="w-1/3">
-                  <label className="block text-xs font-semibold mb-1 text-slate-700">Mata Pelajaran *</label>
-                  <select
-                    required
-                    value={examSubject}
-                    onChange={(e) => setExamSubject(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none"
-                  >
-                    <option value="">Pilih Mapel</option>
-                    {subjects.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4 pt-4 border-t border-slate-100">
+                  <div>
+                    <label className="block text-xs font-bold mb-1.5 text-slate-700">Mata Pelajaran *</label>
+                    <select
+                      required
+                      value={examSubject}
+                      onChange={(e) => setExamSubject(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none font-medium"
+                    >
+                      <option value="">Pilih Mapel</option>
+                      {subjects.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold mb-1.5 text-slate-700">
+                      Tampilkan Nilai Hasil Belajar ke Siswa *
+                    </label>
+                    <select
+                      value={showScoreToStudent ? 'true' : 'false'}
+                      onChange={(e) => setShowScoreToStudent(e.target.value === 'true')}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none font-bold text-indigo-900"
+                    >
+                      <option value="true">Ditampilkan (Siswa melihat nilai setelah selesai)</option>
+                      <option value="false">Tidak Ditampilkan (Nilai disembunyikan dari siswa)</option>
+                    </select>
+                    <span className="text-[10px] text-slate-500 block mt-1 font-medium">
+                      * (Catatan: Untuk Ujian yang memuat soal Uraian/Esai, Nilai otomatis disembunyikan sampai diperiksa Guru)
+                    </span>
+                  </div>
                 </div>
               )}
             </div> {/* END CONFIG CARD */}
@@ -7701,7 +9610,7 @@ export default function TeacherPanel({
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all"
                     >
                       <option value="">-- Kelas --</option>
-                      {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {sortedClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                   <div>
@@ -8514,12 +10423,22 @@ export default function TeacherPanel({
                     Total Siswa: {classStudents.length} • Dikumpulkan: {taskSubs.length} Siswa
                   </p>
                 </div>
-                <button
-                  onClick={() => setSelectedSubmissionsAssign(null)}
-                  className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSyncAssignmentToLeger(selectedSubmissionsAssign)}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                    title="Kirim & Sinkronkan seluruh nilai tugas ini ke Leger Nilai"
+                  >
+                    <Save className="w-4 h-4 text-indigo-200" /> Kirim / Sync Nilai ke Leger
+                  </button>
+                  <button
+                    onClick={() => setSelectedSubmissionsAssign(null)}
+                    className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-y-auto space-y-3 flex-1 pr-1">
@@ -8584,16 +10503,24 @@ export default function TeacherPanel({
                                   </a>
                                 </div>
                               ) : (
-                                sub.fileUrl && (
-                                  <a
-                                    href={sub.fileUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 shadow-xs"
-                                  >
-                                    <ExternalLink className="w-3.5 h-3.5" /> Buka Link Google Drive
-                                  </a>
-                                )
+                                sub.fileUrl && (() => {
+                                  const driveInfo = analyzeDriveUrl(sub.fileUrl);
+                                  return (
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2.5 py-1 rounded-xl text-xs font-extrabold border ${driveInfo.colorClass}`}>
+                                        {driveInfo.label}
+                                      </span>
+                                      <a
+                                        href={sub.fileUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                                      >
+                                        <ExternalLink className="w-3.5 h-3.5" /> Buka Link Berkas Siswa
+                                      </a>
+                                    </div>
+                                  );
+                                })()
                               )}
 
                               {sub.notes && (
@@ -8649,6 +10576,9 @@ export default function TeacherPanel({
                                       status: 'Dinilai'
                                     });
                                     toast.success(`Nilai untuk ${st.name} berhasil disimpan!`);
+                                    setTimeout(() => {
+                                      handleSyncAssignmentToLeger(selectedSubmissionsAssign);
+                                    }, 100);
                                   }
                                 }}
                                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-2xs transition shrink-0 cursor-pointer"
@@ -9003,6 +10933,383 @@ export default function TeacherPanel({
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KOREKSI & PENILAIAN MANUAL SOAL URAIAN CBT */}
+      {selectedSubmissionForGrading && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-in fade-in duration-200 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-3xl w-full my-auto shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* MODAL HEADER */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:px-6 flex items-center justify-between gap-4 border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-600/30 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0 shadow-inner">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-black tracking-widest text-indigo-300 uppercase">PENILAIAN URAIAN & EVALUASI CBT</span>
+                    {selectedSubmissionForGrading.essayGraded ? (
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded border border-emerald-400/30 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" /> Sudah Dinilai (Leger Synced)
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded border border-amber-400/30 flex items-center gap-1 animate-pulse">
+                        <AlertCircle className="w-3 h-3" /> Belum Dinilai Uraian
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-extrabold text-base sm:text-lg text-white leading-tight mt-0.5">
+                    {selectedSubmissionForGrading.studentName} <span className="font-mono text-xs text-indigo-200 font-normal">({selectedSubmissionForGrading.studentNis})</span>
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedSubmissionForGrading(null)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* MODAL BODY CONTROLS & FORM */}
+            <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+              
+              {/* EXAM & CLASS SUMMARY CARD */}
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div>
+                  <span className="text-slate-400 block font-medium text-[10px] uppercase tracking-wider">JUDUL UJIAN & KELAS</span>
+                  <span className="font-black text-slate-900 text-sm">{selectedSubmissionForGrading.examTitle}</span>
+                  <span className="ml-2 text-indigo-600 font-bold">({selectedSubmissionForGrading.className})</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-slate-400 block font-medium text-[10px] uppercase tracking-wider">WAKTU SELESAI UJIAN</span>
+                  <span className="font-semibold text-slate-700">
+                    {new Date(selectedSubmissionForGrading.submittedAt).toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
+
+              {/* METHOD SELECTION TABS */}
+              <div className="space-y-2">
+                <label className="block text-xs font-black text-slate-800 uppercase tracking-wide">
+                  Metode Penilaian Uraian Guru:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setGradingMethod('PER_SOAL')}
+                    className={`p-3.5 rounded-2xl border text-left transition cursor-pointer flex items-center gap-3 ${
+                      gradingMethod === 'PER_SOAL'
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-black shadow-2xs ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold shrink-0 ${
+                      gradingMethod === 'PER_SOAL' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      1
+                    </div>
+                    <div>
+                      <div className="font-extrabold text-xs sm:text-sm">Nilai Per Soal Uraian (Rekomendasi)</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Periksa tiap jawaban uraian siswa & beri skor per butir</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setGradingMethod('TOTAL_LANGSUNG')}
+                    className={`p-3.5 rounded-2xl border text-left transition cursor-pointer flex items-center gap-3 ${
+                      gradingMethod === 'TOTAL_LANGSUNG'
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-black shadow-2xs ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold shrink-0 ${
+                      gradingMethod === 'TOTAL_LANGSUNG' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      2
+                    </div>
+                    <div>
+                      <div className="font-extrabold text-xs sm:text-sm">Input Langsung Total Nilai Akhir</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Masukkan nilai total akhir (0-100) secara langsung</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* METHOD 1: PER SOAL URAIAN LIST */}
+              {gradingMethod === 'PER_SOAL' && (() => {
+                const exam = teacherExams.find(e => e.id === selectedSubmissionForGrading.examId);
+                if (!exam) return <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-500">Soal ujian tidak ditemukan.</div>;
+
+                const essayQuestions = exam.questions.filter(q => q.type === 'Uraian');
+
+                if (essayQuestions.length === 0) {
+                  return (
+                    <div className="p-5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-2">
+                      <p className="font-extrabold flex items-center gap-1.5">
+                        <Info className="w-4 h-4 text-amber-600" /> Ujian ini tidak memiliki soal berjenis Uraian (Essay).
+                      </p>
+                      <p className="text-slate-600">
+                        Seluruh soal pada ujian ini adalah tipe pilihan objektif yang telah dinilai otomatis. Anda dapat menggunakan metode "Input Langsung Total Nilai Akhir" jika ingin menyesuaikan total nilai siswa.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-6">
+                    <div className="border-b border-slate-200 pb-2 flex items-center justify-between">
+                      <h4 className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-indigo-600" /> DAFTAR SOAL URAIAN SISWA ({essayQuestions.length} Soal)
+                      </h4>
+                      <span className="text-[10px] text-slate-500 font-medium">Beri nilai pada masing-masing soal di bawah ini</span>
+                    </div>
+
+                    <div className="space-y-6">
+                      {essayQuestions.map((q, idx) => {
+                        const studentAnsObj = selectedSubmissionForGrading.answers.find(a => a.questionId === q.id);
+                        const studentAnswerText = studentAnsObj?.studentAnswer;
+                        const maxScore = q.score || 10;
+                        const currentScoreVal = essayScoresState[q.id] ?? 0;
+
+                        return (
+                          <div key={q.id} className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-2xs space-y-4 relative">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-2">
+                                <span className="w-7 h-7 rounded-xl bg-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                  {idx + 1}
+                                </span>
+                                <div>
+                                  <span className="text-[10px] font-extrabold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100">
+                                    Soal Uraian / Essay
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="text-xs bg-emerald-50 text-emerald-800 font-extrabold px-2.5 py-1 rounded-lg border border-emerald-200">
+                                Maksimal Skor: {maxScore} Poin
+                              </span>
+                            </div>
+
+                            {/* QUESTION STIMULUS / TEXT */}
+                            <div className="text-xs sm:text-sm font-semibold text-slate-900 bg-slate-50 p-3.5 rounded-xl border border-slate-100 leading-relaxed">
+                              {renderFormattedText(q.questionText, q.fontPreset)}
+                            </div>
+
+                            {/* KUNCI / RUBRIK JAWABAN GURU (IF ANY) */}
+                            {q.correctAnswer && (
+                              <div className="bg-emerald-50/60 border border-emerald-200 p-3 rounded-xl text-xs space-y-1">
+                                <span className="font-extrabold text-emerald-900 block text-[11px] uppercase tracking-wide">
+                                  💡 Kunci / Rubrik Jawaban Ideal Guru:
+                                </span>
+                                <p className="text-slate-800 font-medium leading-relaxed">
+                                  {q.correctAnswer}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* STUDENT SUBMITTED ANSWER TEXT */}
+                            <div className="space-y-1.5">
+                              <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                                💬 Jawaban Siswa ({selectedSubmissionForGrading.studentName}):
+                              </label>
+                              <div className="bg-indigo-50/40 border border-indigo-100 p-3.5 rounded-xl text-xs sm:text-sm font-medium text-slate-900 leading-relaxed min-h-[60px] whitespace-pre-wrap">
+                                {studentAnswerText && String(studentAnswerText).trim() !== '' ? (
+                                  <span>{String(studentAnswerText)}</span>
+                                ) : (
+                                  <span className="text-amber-700 italic font-medium">Siswa tidak memberikan jawaban pada soal uraian ini.</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* TEACHER SCORE INPUT & PRESETS */}
+                            <div className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                  <label className="block text-xs font-black text-slate-900">
+                                    Input Nilai Skor Guru (0 - {maxScore}):
+                                  </label>
+                                  <span className="text-[10px] text-slate-500 font-normal">Ketikkan angka nilai atau pilih preset di samping</span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={maxScore}
+                                    step="0.5"
+                                    value={currentScoreVal}
+                                    onChange={(e) => {
+                                      const num = Math.max(0, Math.min(maxScore, Number(e.target.value) || 0));
+                                      setEssayScoresState(prev => ({ ...prev, [q.id]: num }));
+                                    }}
+                                    className="w-24 px-3 py-2 border-2 border-indigo-600 rounded-xl text-center font-black text-sm text-indigo-900 bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                                  />
+                                  <span className="text-xs font-bold text-slate-500">/ {maxScore} Poin</span>
+                                </div>
+                              </div>
+
+                              {/* QUICK PRESET BUTTONS */}
+                              <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
+                                <span className="text-[10px] font-bold text-slate-500">Preset Cepat:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEssayScoresState(prev => ({ ...prev, [q.id]: 0 }))}
+                                  className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 text-[10px] font-extrabold rounded-lg transition cursor-pointer"
+                                >
+                                  0% (Salah / 0)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEssayScoresState(prev => ({ ...prev, [q.id]: Math.round(maxScore * 0.5) }))}
+                                  className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-extrabold rounded-lg transition cursor-pointer"
+                                >
+                                  50% (Sebagian / {Math.round(maxScore * 0.5)})
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEssayScoresState(prev => ({ ...prev, [q.id]: maxScore }))}
+                                  className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 text-[10px] font-extrabold rounded-lg transition cursor-pointer"
+                                >
+                                  100% (Sempurna / {maxScore})
+                                </button>
+                              </div>
+
+                              {/* TEACHER NOTE INPUT */}
+                              <div className="pt-2">
+                                <input
+                                  type="text"
+                                  placeholder="Catatan / Feedback guru untuk soal ini (opsional)..."
+                                  value={essayNotesState[q.id] || ''}
+                                  onChange={(e) => setEssayNotesState(prev => ({ ...prev, [q.id]: e.target.value }))}
+                                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium text-slate-800 bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* METHOD 2: INPUT LANGSUNG TOTAL NILAI */}
+              {gradingMethod === 'TOTAL_LANGSUNG' && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 shadow-2xs">
+                  <div className="border-b border-slate-200 pb-2">
+                    <h4 className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-indigo-600" /> INPUT LANGSUNG TOTAL NILAI AKHIR (0 - 100)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Gunakan opsi ini jika Anda ingin menetapkan total nilai akhir siswa secara langsung untuk masuk ke Leger Nilai.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                    <div className="space-y-1 flex-1">
+                      <label className="block text-xs font-black text-slate-900">Nilai Akhir Siswa (Skala 0 - 100):</label>
+                      <span className="text-[11px] text-slate-600 block">Nilai ini akan disimpan dan ditampilkan langsung pada Rekap / Leger Nilai.</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={directTotalScoreState}
+                        onChange={(e) => setDirectTotalScoreState(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+                        className="w-28 px-4 py-3 border-2 border-indigo-600 rounded-xl text-center font-black text-lg text-indigo-950 bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                      />
+                      <span className="font-black text-sm text-slate-700">/ 100</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* OVERALL TEACHER FEEDBACK NOTE */}
+              <div className="space-y-2">
+                <label className="block text-xs font-black text-slate-800 uppercase tracking-wide">
+                  Catatan & Evaluasi Keseluruhan Guru (Opsional):
+                </label>
+                <textarea
+                  placeholder="Ketikkan apresiasi atau saran perbaikan untuk siswa..."
+                  value={overallFeedbackState}
+                  onChange={(e) => setOverallFeedbackState(e.target.value)}
+                  className="w-full h-20 px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden resize-y"
+                />
+              </div>
+
+              {/* LIVE CALCULATED SCORE SUMMARY BAR */}
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg border border-slate-800">
+                <div className="text-center sm:text-left">
+                  <span className="text-[10px] text-indigo-300 font-black tracking-widest uppercase block">HASIL PENILAIAN AKHIR</span>
+                  <p className="text-xs text-slate-300 font-medium">Nilai ini akan langsung memperbarui & tersimpan di Leger Nilai</p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-400 font-bold uppercase">Nilai Leger:</span>
+                  <span className="text-2xl sm:text-3xl font-black font-mono text-emerald-400 bg-slate-800/80 px-4 py-1.5 rounded-xl border border-emerald-500/30">
+                    {gradingMethod === 'TOTAL_LANGSUNG' 
+                      ? (directTotalScoreState || 0)
+                      : (() => {
+                          const exam = teacherExams.find(e => e.id === selectedSubmissionForGrading.examId);
+                          if (!exam) return selectedSubmissionForGrading.score;
+
+                          let totalEarned = 0;
+                          let totalMaxPoints = 0;
+
+                          exam.questions.forEach(q => {
+                            const qWeight = q.score || 1;
+                            totalMaxPoints += qWeight;
+
+                            const studentAns = selectedSubmissionForGrading.answers.find(a => a.questionId === q.id);
+
+                            if (q.type === 'Uraian') {
+                              totalEarned += Number(essayScoresState[q.id]) || 0;
+                            } else {
+                              if (studentAns?.isCorrect) {
+                                totalEarned += qWeight;
+                              } else if (studentAns?.pointsEarned) {
+                                totalEarned += studentAns.pointsEarned;
+                              }
+                            }
+                          });
+
+                          const calc = totalMaxPoints > 0 ? Math.round((totalEarned / totalMaxPoints) * 100) : selectedSubmissionForGrading.score;
+                          return Math.max(0, Math.min(100, calc));
+                        })()
+                    }
+                  </span>
+                </div>
+              </div>
+
+            </div>
+
+            {/* MODAL FOOTER BUTTONS */}
+            <div className="bg-slate-100 border-t border-slate-200 p-4 sm:px-6 flex items-center justify-between gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setSelectedSubmissionForGrading(null)}
+                className="px-4 py-2.5 bg-white hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl border border-slate-300 transition cursor-pointer"
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveEssayGrading}
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs sm:text-sm rounded-xl transition cursor-pointer shadow-md flex items-center gap-2 uppercase tracking-wide"
+              >
+                <Save className="w-4 h-4" /> Simpan Penilaian & Sync ke Leger
+              </button>
+            </div>
+
           </div>
         </div>
       )}

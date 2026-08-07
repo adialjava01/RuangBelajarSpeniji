@@ -134,7 +134,7 @@ export async function restoreDatabaseBatch(backupData: Record<string, any>, mode
     'counselingSessions', 'dailyCheckIns', 'needsAssessments', 'sociometries',
     'homeVisits', 'careerPlans', 'submissions', 'manualAssessments',
     'announcements', 'registrations', 'shareRequests', 'globalAnnouncements',
-    'assignmentFolders', 'assignmentSubmissions'
+    'assignmentFolders', 'assignmentSubmissions', 'scheduleNotes', 'livePresentations'
   ];
 
   let totalRestored = 0;
@@ -164,7 +164,12 @@ export async function restoreDatabaseBatch(backupData: Record<string, any>, mode
 
   if (backupData.schoolConfig) {
     const docRef = doc(db, 'config', 'schoolConfig');
-    await setDoc(docRef, stripUndefined(backupData.schoolConfig), { merge: true });
+    await setDoc(docRef, stripUndefined(backupData.schoolConfig), { merge: mode === 'merge' });
+  }
+
+  if (backupData.livePresentation) {
+    const docRef = doc(db, 'config', 'livePresentation');
+    await setDoc(docRef, stripUndefined(backupData.livePresentation), { merge: mode === 'merge' });
   }
 
   return totalRestored;

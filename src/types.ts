@@ -7,6 +7,10 @@ export interface SchoolConfig {
   landingDescription: string;
   footerText: string;
   adminPassword?: string;
+  principalName?: string;
+  principalNip?: string;
+  academicYear?: string;
+  semester?: 'Ganjil' | 'Genap';
 }
 
 export interface Teacher {
@@ -172,6 +176,7 @@ export interface Exam {
   questions: ExamQuestion[];
   createdAt: string;
   teacherId?: string;
+  showScoreToStudent?: boolean;
 }
 
 export interface CheatLog {
@@ -230,8 +235,13 @@ export interface ExamSubmission {
     studentAnswer: any; // Format varies by type
     isCorrect: boolean;
     pointsEarned: number;
+    essayScore?: number;
+    teacherNote?: string;
   }[];
   cheatingAttempts: number;
+  essayGraded?: boolean;
+  manualTotalScore?: number;
+  teacherFeedback?: string;
 }
 
 export interface TeacherScheduleNote {

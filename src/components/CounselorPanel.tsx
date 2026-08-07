@@ -79,6 +79,43 @@ export default function CounselorPanel({
   const [showSociometryResults, setShowSociometryResults] = useState(false);
   const [selectedClassForSociometry, setSelectedClassForSociometry] = useState<string | null>(null);
 
+  const getGradeLevel = (name: string) => {
+    const cleanName = name.replace(/^Kelas\s+/i, '').trim();
+    const match = cleanName.match(/^(XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I|12|11|10|9|8|7|6|5|4|3|2|1)[-_\s]?(.*)$/i);
+    if (!match) return { level: 99, rest: cleanName };
+    const gradeStr = match[1].toUpperCase();
+    let level = 99;
+    if (gradeStr === 'VII' || gradeStr === '7') level = 7;
+    else if (gradeStr === 'VIII' || gradeStr === '8') level = 8;
+    else if (gradeStr === 'IX' || gradeStr === '9') level = 9;
+    else if (gradeStr === 'X' || gradeStr === '10') level = 10;
+    else if (gradeStr === 'XI' || gradeStr === '11') level = 11;
+    else if (gradeStr === 'XII' || gradeStr === '12') level = 12;
+    return { level, rest: match[2] || cleanName };
+  };
+
+  const sortedClasses = [...classes].sort((a, b) => {
+    const gA = getGradeLevel(a.name);
+    const gB = getGradeLevel(b.name);
+    if (gA.level !== gB.level) return gA.level - gB.level;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  });
+
+  const sortedStudents = [...students].sort((a, b) => {
+    const classA = classes.find(c => c.id === a.classId)?.name || '';
+    const classB = classes.find(c => c.id === b.classId)?.name || '';
+    
+    if (classA !== classB) {
+      const gA = getGradeLevel(classA);
+      const gB = getGradeLevel(classB);
+      if (gA.level !== gB.level) return gA.level - gB.level;
+      return classA.localeCompare(classB, undefined, { numeric: true, sensitivity: 'base' });
+    }
+    
+    if (a.noAbsen != null && b.noAbsen != null) return a.noAbsen - b.noAbsen;
+    return a.name.localeCompare(b.name);
+  });
+
   const handleSaveSession = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudentNis || !sessionDate || !actionTaken) return;
@@ -129,11 +166,12 @@ export default function CounselorPanel({
   };
 
 
-  const uniqueGrades = Array.from(new Set(classes.map(c => {
-    const parts = c.name.split(/[-\s]/);
-    return parts[0];
+  const uniqueGrades = Array.from(new Set(sortedClasses.map(c => {
+    const clean = c.name.replace(/^Kelas\s+/i, '').trim();
+    const match = clean.match(/^(XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I|12|11|10|9|8|7|6|5|4|3|2|1)/i);
+    return match ? match[1].toUpperCase() : clean.split(/[-\s]/)[0];
   }))).sort((a, b) => {
-    const gradeOrder: Record<string, number> = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10, 'XI': 11, 'XII': 12 };
+    const gradeOrder: Record<string, number> = { '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, '11': 11, '12': 12, 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10, 'XI': 11, 'XII': 12 };
     return (gradeOrder[a] || 99) - (gradeOrder[b] || 99);
   });
 
@@ -395,23 +433,13 @@ export default function CounselorPanel({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {Array.from<ClassItem>(new Map(classes.map(c => [c.name, c])).values())
+                {Array.from<ClassItem>(new Map(sortedClasses.map(c => [c.name, c])).values())
                   .filter(c => selectedGrade === null || c.name.startsWith(selectedGrade + '-') || c.name.startsWith(selectedGrade + ' '))
                   .sort((a, b) => {
-                    const [gradeA, classA] = a.name.split('-');
-                    const [gradeB, classB] = b.name.split('-');
-                    const gradeOrder: Record<string, number> = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10, 'XI': 11, 'XII': 12 };
-                    const orderA = gradeOrder[gradeA] || 99;
-                    const orderB = gradeOrder[gradeB] || 99;
-                    
-                    if (orderA !== orderB) {
-                      return orderA - orderB;
-                    }
-                    
-                    if (classA && classB) {
-                      return classA.localeCompare(classB);
-                    }
-                    return a.name.localeCompare(b.name);
+                    const gA = getGradeLevel(a.name);
+                    const gB = getGradeLevel(b.name);
+                    if (gA.level !== gB.level) return gA.level - gB.level;
+                    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
                   })
                   .map(c => {
                     const matchingClassIds = classes.filter(cls => cls.name === c.name).map(cls => cls.id);
@@ -445,7 +473,7 @@ export default function CounselorPanel({
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={(() => {
-                      const classAverages = classes.map(c => {
+                      const classAverages = sortedClasses.map(c => {
                         const studentsInClass = students.filter(s => s.classId === c.id);
                         const nisInClass = studentsInClass.map(s => s.nis);
                         const classAkpd = needsAssessments.filter(a => nisInClass.includes(a.studentNis));
@@ -468,7 +496,12 @@ export default function CounselorPanel({
                         };
                       }).filter(item => item !== null) as {name: string, Pribadi: number, Sosial: number, Belajar: number, Karir: number}[];
                       
-                      return classAverages.sort((a, b) => a.name.localeCompare(b.name));
+                      return classAverages.sort((a, b) => {
+                        const gA = getGradeLevel(a.name);
+                        const gB = getGradeLevel(b.name);
+                        if (gA.level !== gB.level) return gA.level - gB.level;
+                        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+                      });
                     })()}
                     margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
                   >
@@ -583,9 +616,14 @@ export default function CounselorPanel({
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm"
                     >
                       <option value="">-- Pilih Siswa --</option>
-                      {students.map(s => (
-                        <option key={s.nis} value={s.nis}>{s.name} ({s.nis})</option>
-                      ))}
+                      {sortedStudents.map(s => {
+                        const clsName = classes.find(c => c.id === s.classId)?.name;
+                        return (
+                          <option key={s.nis} value={s.nis}>
+                            {s.name} {clsName ? `(Kelas ${clsName})` : ''} - NIS {s.nis}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                   <div>
@@ -1013,8 +1051,8 @@ export default function CounselorPanel({
                         className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-teal-500"
                       >
                         <option value="all">Semua Kelas</option>
-                        {classes.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
+                        {sortedClasses.map(c => (
+                          <option key={c.id} value={c.id}>Kelas {c.name}</option>
                         ))}
                       </select>
                       <select 
@@ -1179,7 +1217,10 @@ export default function CounselorPanel({
                 <label className="block text-sm font-bold text-slate-700 mb-1">Pilih Siswa</label>
                 <select value={karirStudentNis} onChange={e => setKarirStudentNis(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none">
                   <option value="">-- Pilih Siswa --</option>
-                  {students.map(s => <option key={s.id} value={s.nis}>{s.name} ({s.nis})</option>)}
+                  {sortedStudents.map(s => {
+                    const clsName = classes.find(c => c.id === s.classId)?.name;
+                    return <option key={s.id} value={s.nis}>{s.name} {clsName ? `(Kelas ${clsName})` : ''} - NIS {s.nis}</option>;
+                  })}
                 </select>
               </div>
               <div>
@@ -1230,7 +1271,10 @@ export default function CounselorPanel({
                 <label className="block text-sm font-bold text-slate-700 mb-1">Pilih Siswa</label>
                 <select value={hvStudentNis} onChange={e => setHvStudentNis(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none">
                   <option value="">-- Pilih Siswa --</option>
-                  {students.map(s => <option key={s.id} value={s.nis}>{s.name} ({s.nis})</option>)}
+                  {sortedStudents.map(s => {
+                    const clsName = classes.find(c => c.id === s.classId)?.name;
+                    return <option key={s.id} value={s.nis}>{s.name} {clsName ? `(Kelas ${clsName})` : ''} - NIS {s.nis}</option>;
+                  })}
                 </select>
               </div>
               <div>
