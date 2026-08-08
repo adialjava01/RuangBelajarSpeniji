@@ -10601,7 +10601,7 @@ export default function TeacherPanel({
       {/* MODAL TEACHER LIVE PRESENTATION REAL-TIME SYNC CONTROL */}
       {(activeLiveMaterial || myLivePresentation?.active) && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 z-50 animate-fade-in">
-          <div className="bg-slate-900 text-white rounded-3xl shadow-2xl border border-slate-800 w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-slate-900 text-white rounded-3xl shadow-2xl border border-slate-800 w-full h-full flex flex-col overflow-hidden">
             {/* Top Header Bar */}
             <div className="bg-slate-950 p-4 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
@@ -10786,7 +10786,7 @@ export default function TeacherPanel({
                     </h2>
 
                     {embedUrl ? (
-                      <div className="w-full h-[55vh] max-w-4xl rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2 shrink-0">
+                      <div className="w-full flex-1 min-h-[400px] max-w-full rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-2 shrink-0">
                         <iframe
                           key={`teacher_embed_${embedUrl}_${liveSlideNum}`}
                           src={embedUrl}
@@ -10797,11 +10797,11 @@ export default function TeacherPanel({
                         />
                       </div>
                     ) : isImg ? (
-                      <div className="max-w-3xl max-h-[55vh] overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2 shrink-0">
-                        <img src={currentUrl} alt="Slide Media" className="max-h-[50vh] object-contain mx-auto" />
+                      <div className="w-full flex-1 max-w-full overflow-hidden rounded-2xl border border-slate-700 shadow-2xl my-2 shrink-0 flex items-center justify-center">
+                        <img src={currentUrl} alt="Slide Media" className="max-h-full max-w-full object-contain mx-auto" />
                       </div>
                     ) : currentMat?.content ? (
-                      <div className="w-full max-w-3xl text-sm text-slate-200 leading-relaxed text-left bg-slate-800/90 p-6 rounded-2xl border border-slate-700/80 shadow-inner space-y-4">
+                      <div className="w-full flex-1 max-w-full overflow-auto text-sm text-slate-200 leading-relaxed text-left bg-slate-800/90 p-6 rounded-2xl border border-slate-700/80 shadow-inner space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-700/60 pb-2 mb-2 text-xs text-amber-300 font-extrabold">
                           <span>📌 Bagian Slide / Paragraf {liveSlideNum}</span>
                           <span className="text-[10px] bg-amber-950/80 text-amber-200 px-2 py-0.5 rounded border border-amber-800/60">Tersambung Real-time ke Layar Siswa</span>

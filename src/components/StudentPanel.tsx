@@ -3425,7 +3425,7 @@ export default function StudentPanel({
             className={`bg-slate-900 text-white shadow-2xl border-slate-800 w-full flex flex-col overflow-hidden transition-all duration-200 ${
               forceRotate90
                 ? 'rounded-none border-0'
-                : 'max-w-5xl h-[96vh] sm:h-[92vh] rounded-2xl sm:rounded-3xl border landscape:max-w-full landscape:h-full landscape:rounded-none landscape:border-0'
+                : 'h-full rounded-2xl sm:rounded-3xl border landscape:h-full landscape:rounded-none landscape:border-0'
             }`}
           >
             {/* Top Notification Badge for Mobile Phone Portrait Users */}
@@ -3592,7 +3592,7 @@ export default function StudentPanel({
                       </h2>
 
                       {embedUrl ? (
-                        <div className="w-full h-[65vh] landscape:h-[82vh] sm:h-[58vh] max-w-5xl rounded-xl sm:rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-1 shrink-0 flex-1 min-h-[220px]">
+                        <div className="w-full h-[65vh] landscape:h-[82vh] sm:h-[58vh] max-w-full rounded-xl sm:rounded-2xl overflow-hidden border border-slate-700 bg-black shadow-2xl my-1 shrink-0 flex-1 min-h-[220px]">
                           <iframe
                             key={`student_modal_embed_${embedUrl}_${activeSlide}`}
                             src={embedUrl}
@@ -3603,11 +3603,11 @@ export default function StudentPanel({
                           />
                         </div>
                       ) : isImg ? (
-                        <div className="max-w-4xl max-h-[65vh] landscape:max-h-[82vh] sm:max-h-[58vh] overflow-hidden rounded-xl sm:rounded-2xl border border-slate-700 shadow-2xl my-1 shrink-0 flex-1 flex items-center justify-center">
+                        <div className="w-full max-w-full max-h-[65vh] landscape:max-h-[82vh] sm:max-h-[58vh] overflow-hidden rounded-xl sm:rounded-2xl border border-slate-700 shadow-2xl my-1 shrink-0 flex-1 flex items-center justify-center">
                           <img src={currentUrl} alt="Slide Media" className="max-h-[60vh] landscape:max-h-[80vh] sm:max-h-[50vh] object-contain mx-auto" />
                         </div>
                       ) : mat?.content ? (
-                        <div className="w-full max-w-3xl text-sm text-slate-200 leading-relaxed text-left bg-slate-800/90 p-6 rounded-2xl border border-slate-700/80 shadow-inner space-y-4">
+                        <div className="w-full max-w-full text-sm text-slate-200 leading-relaxed text-left bg-slate-800/90 p-6 rounded-2xl border border-slate-700/80 shadow-inner space-y-4">
                           <div className="flex items-center justify-between border-b border-slate-700/60 pb-2 mb-2 text-xs text-amber-300 font-extrabold">
                             <span>📌 Bagian Slide / Paragraf {activeSlide}</span>
                             <span className="text-[10px] bg-amber-950/80 text-amber-200 px-2 py-0.5 rounded border border-amber-800/60">Disinkronkan Guru</span>

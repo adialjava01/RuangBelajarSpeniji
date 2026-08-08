@@ -767,7 +767,7 @@ export default function AdminPanel({
     const gA = getGradeLevel(a.name);
     const gB = getGradeLevel(b.name);
     if (gA.level !== gB.level) return gA.level - gB.level;
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    return String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true, sensitivity: 'base' });
   });
 
   const handleDownloadTemplate = () => {
@@ -843,7 +843,7 @@ export default function AdminPanel({
           else if (g.startsWith('P')) gender = 'P';
         }
 
-        const matchedClass = classes.find(c => c.name.toLowerCase() === classNameInput.toLowerCase()) || classes[0];
+        const matchedClass = classes.find(c => String(c.name || '').toLowerCase() === classNameInput.toLowerCase()) || classes[0];
         const classId = matchedClass ? matchedClass.id : 'class-1';
         const className = matchedClass ? matchedClass.name : classNameInput;
 
@@ -948,7 +948,7 @@ export default function AdminPanel({
       if (onAddSubject && item.subject) {
         (item.subject || '').split(',').forEach(s => {
           const trimmed = s.trim();
-          if (trimmed && !subjects.some(sub => (sub.name || '').toLowerCase() === trimmed.toLowerCase())) {
+          if (trimmed && !subjects.some(sub => String(sub.name || '').toLowerCase() === trimmed.toLowerCase())) {
             onAddSubject(trimmed);
           }
         });
@@ -985,7 +985,10 @@ export default function AdminPanel({
 
   const handleSaveTeacher = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTeacher.name || !newTeacher.nip || !newTeacher.subject) return;
+    if (!newTeacher.name || !newTeacher.nip || !newTeacher.subject) {
+      toast.error("Gagal: Lengkapi Nama, NIP, dan minimal 1 Mata Pelajaran!");
+      return;
+    }
 
     onAddTeacher({
       name: newTeacher.name,
@@ -995,6 +998,8 @@ export default function AdminPanel({
       photoUrl: newTeacher.photoUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop',
       isAdmin: newTeacher.isAdmin || false
     });
+
+    toast.success(`Guru ${newTeacher.name} berhasil didaftarkan!`);
 
     // Reset Form
     setNewTeacher({
@@ -1012,17 +1017,21 @@ export default function AdminPanel({
 
   const handleSaveStudent = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStudent.name || !newStudent.nis || !newStudent.classId) return;
+    if (!newStudent.name || !newStudent.nis || !newStudent.classId) {
+      toast.error("Gagal: Lengkapi Nama, NIS, dan Kelas!");
+      return;
+    }
 
     if (onAddStudent) {
       onAddStudent({
         name: newStudent.name,
         nis: newStudent.nis,
-        email: newStudent.email || `${newStudent.nis}@smp.sch.id`,
+        email: newStudent.email || `${newStudent.nis}@siswa.smp.sch.id`,
         classId: newStudent.classId,
         noAbsen: newStudent.noAbsen,
         gender: newStudent.gender
       });
+      toast.success(`Siswa ${newStudent.name} berhasil didaftarkan!`);
     }
 
     // Reset Form
@@ -1043,24 +1052,24 @@ export default function AdminPanel({
 
   // Filters
   const filteredTeachers = teachers.filter(t => 
-    (t.name || '').toLowerCase().includes(searchTeacher.toLowerCase()) || 
-    t.nip.includes(searchTeacher) ||
-    (t.subject || '').toLowerCase().includes(searchTeacher.toLowerCase())
+    String(t.name || '').toLowerCase().includes(searchTeacher.toLowerCase()) || 
+    (t.nip || '').includes(searchTeacher) ||
+    String(t.subject || '').toLowerCase().includes(searchTeacher.toLowerCase())
   );
 
   const activeStudents = students.filter(s => !s.status || s.status === 'Aktif');
   const archivedStudents = students.filter(s => s.status === 'Lulus' || s.status === 'Pindah');
 
   const filteredStudents = activeStudents.filter(s => 
-    (s.name || '').toLowerCase().includes(searchStudent.toLowerCase()) || 
-    s.nis.includes(searchStudent) ||
+    String(s.name || '').toLowerCase().includes(searchStudent.toLowerCase()) || 
+    (s.nis || '').includes(searchStudent) ||
     getClassName(s.classId).toLowerCase().includes(searchStudent.toLowerCase())
   ).sort((a, b) => {
     // Sort by class name first
     const classA = getClassName(a.classId);
     const classB = getClassName(b.classId);
     if (classA !== classB) {
-      return classA.localeCompare(classB);
+      return String(classA || '').localeCompare(String(classB || ''));
     }
     // Then sort by noAbsen, if available
     if (a.noAbsen != null && b.noAbsen != null) return a.noAbsen - b.noAbsen;
@@ -1256,8 +1265,8 @@ export default function AdminPanel({
   };
 
   const filteredArchivedStudents = archivedStudents.filter(s => 
-    (s.name || '').toLowerCase().includes(searchStudent.toLowerCase()) || 
-    s.nis.includes(searchStudent)
+    String(s.name || '').toLowerCase().includes(searchStudent.toLowerCase()) || 
+    (s.nis || '').includes(searchStudent)
   );
 
   return (
@@ -1542,7 +1551,7 @@ export default function AdminPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {teachers.filter(t => t.name.toLowerCase().includes(searchTeacher.toLowerCase()) || t.nip.toLowerCase().includes(searchTeacher.toLowerCase())).map((teacher) => (
+                {filteredTeachers.map((teacher) => (
                   <tr key={teacher.id} className="hover:bg-slate-50 transition">
                     <td className="px-6 py-3 font-bold text-slate-900">{teacher.name}</td>
                     <td className="px-6 py-3 font-mono text-slate-600">{teacher.nip}</td>
@@ -2362,9 +2371,9 @@ export default function AdminPanel({
         // Filter teachers based on search query or class/subject filters
         const filteredTeachers = teacherList.filter(t => {
           const matchesName = journalTeacherSearch === '' || 
-            t.name.toLowerCase().includes(journalTeacherSearch.toLowerCase()) || 
-            t.nip.toLowerCase().includes(journalTeacherSearch.toLowerCase()) ||
-            t.subject.toLowerCase().includes(journalTeacherSearch.toLowerCase());
+            String(t.name || '').toLowerCase().includes(journalTeacherSearch.toLowerCase()) || 
+            String(t.nip || '').toLowerCase().includes(journalTeacherSearch.toLowerCase()) ||
+            String(t.subject || '').toLowerCase().includes(journalTeacherSearch.toLowerCase());
           
           const matchesClass = journalClassFilter === 'ALL' || t.entries.some(e => e.classId === journalClassFilter);
           const matchesSubject = journalSubjectFilter === 'ALL' || t.entries.some(e => e.subjectId === journalSubjectFilter);
@@ -2385,7 +2394,7 @@ export default function AdminPanel({
           // Filter entries for this teacher if query or class filter is set
           if (journalQuery) {
             teacherEntries = teacherEntries.filter(e => 
-              e.topic.toLowerCase().includes(journalQuery.toLowerCase()) ||
+              String(e.topic || '').toLowerCase().includes(journalQuery.toLowerCase()) ||
               (e.learningObjectives && e.learningObjectives.toLowerCase().includes(journalQuery.toLowerCase())) ||
               (e.notes && e.notes.toLowerCase().includes(journalQuery.toLowerCase()))
             );
@@ -2770,9 +2779,9 @@ export default function AdminPanel({
         // Filter teachers based on search query or class/subject filters
         const filteredTeachers = teacherList.filter(t => {
           const matchesName = tmTeacherSearch === '' ||
-            t.name.toLowerCase().includes(tmTeacherSearch.toLowerCase()) ||
-            t.nip.toLowerCase().includes(tmTeacherSearch.toLowerCase()) ||
-            t.subject.toLowerCase().includes(tmTeacherSearch.toLowerCase());
+            String(t.name || '').toLowerCase().includes(tmTeacherSearch.toLowerCase()) ||
+            String(t.nip || '').toLowerCase().includes(tmTeacherSearch.toLowerCase()) ||
+            String(t.subject || '').toLowerCase().includes(tmTeacherSearch.toLowerCase());
 
           const matchesClass = tmClassFilter === 'ALL' || t.modules.some(m => m.classId === tmClassFilter);
           const matchesSubject = tmSubjectFilter === 'ALL' || t.modules.some(m => m.subjectId === tmSubjectFilter);
@@ -2803,7 +2812,7 @@ export default function AdminPanel({
           if (tmQuery.trim()) {
             // When searching, show all matching modules across all folders for this teacher
             displayMods = allTeacherMods.filter(m => 
-              m.title.toLowerCase().includes(tmQuery.toLowerCase())
+              String(m.title || '').toLowerCase().includes(tmQuery.toLowerCase())
             );
           } else {
             // Normal folder navigation mode
@@ -3452,8 +3461,15 @@ export default function AdminPanel({
                 const input = form.elements.namedItem('classNameInput') as HTMLInputElement;
                 const val = input.value.trim();
                 if (val && onAddClass) {
-                  onAddClass(val);
-                  input.value = '';
+                  if (classes.some(c => String(c.name || '').toLowerCase() === val.toLowerCase())) {
+                    toast.error("Nama kelas sudah ada!");
+                  } else {
+                    onAddClass(val);
+                    toast.success(`Kelas ${val} berhasil ditambahkan!`);
+                    input.value = '';
+                  }
+                } else if (!val) {
+                  toast.error("Nama kelas tidak boleh kosong!");
                 }
               }}
               className="flex gap-2"
@@ -3604,7 +3620,7 @@ export default function AdminPanel({
             {/* Subjects list */}
             <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
               {subjects.map((sub) => {
-                const teacherCount = teachers.filter(t => (t.subject || '').split(',').map(s => s.trim().toLowerCase()).includes((sub.name || '').toLowerCase())).length;
+                const teacherCount = teachers.filter(t => (t.subject || '').split(',').map(s => s.trim().toLowerCase()).includes(String(sub.name || '').toLowerCase())).length;
                 const isEditing = editingSubject?.id === sub.id;
 
                 return (
@@ -4365,7 +4381,7 @@ export default function AdminPanel({
                   <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1">
                     {subjects.map(s => {
                       const currentList = newTeacher.subject ? (newTeacher.subject || '').split(',').map(item => item.trim().toLowerCase()) : [];
-                      const isSelected = currentList.includes((s.name || '').toLowerCase());
+                      const isSelected = currentList.includes(String(s.name || '').toLowerCase());
                       return (
                         <button
                           key={s.id}
@@ -4373,7 +4389,7 @@ export default function AdminPanel({
                           onClick={() => {
                             const list = newTeacher.subject ? (newTeacher.subject || '').split(',').map(item => item.trim()).filter(Boolean) : [];
                             if (isSelected) {
-                              const updated = list.filter(item => item.toLowerCase() !== (s.name || '').toLowerCase()).join(', ');
+                              const updated = list.filter(item => item.toLowerCase() !== String(s.name || '').toLowerCase()).join(', ');
                               setNewTeacher(prev => ({ ...prev, subject: updated }));
                             } else {
                               list.push(s.name);
@@ -4406,7 +4422,7 @@ export default function AdminPanel({
                         const inputEl = e.currentTarget;
                         const val = inputEl.value.trim();
                         if (val) {
-                          if (onAddSubject && !subjects.some(s => (s.name || '').toLowerCase() === val.toLowerCase())) {
+                          if (onAddSubject && !subjects.some(s => String(s.name || '').toLowerCase() === val.toLowerCase())) {
                             onAddSubject(val);
                           }
                           const list = newTeacher.subject ? (newTeacher.subject || '').split(',').map(item => item.trim()).filter(Boolean) : [];
@@ -4425,7 +4441,7 @@ export default function AdminPanel({
                       const inputEl = document.getElementById('custom_subject_input_add') as HTMLInputElement;
                       if (inputEl && inputEl.value.trim()) {
                         const val = inputEl.value.trim();
-                        if (onAddSubject && !subjects.some(s => (s.name || '').toLowerCase() === val.toLowerCase())) {
+                        if (onAddSubject && !subjects.some(s => String(s.name || '').toLowerCase() === val.toLowerCase())) {
                           onAddSubject(val);
                         }
                         const list = newTeacher.subject ? (newTeacher.subject || '').split(',').map(item => item.trim()).filter(Boolean) : [];
@@ -4736,7 +4752,7 @@ export default function AdminPanel({
                   <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1">
                     {subjects.map(s => {
                       const currentList = editingTeacher.subject ? (editingTeacher.subject || '').split(',').map(item => item.trim().toLowerCase()) : [];
-                      const isSelected = currentList.includes((s.name || '').toLowerCase());
+                      const isSelected = currentList.includes(String(s.name || '').toLowerCase());
                       return (
                         <button
                           key={s.id}
@@ -4744,7 +4760,7 @@ export default function AdminPanel({
                           onClick={() => {
                             const list = editingTeacher.subject ? (editingTeacher.subject || '').split(',').map(item => item.trim()).filter(Boolean) : [];
                             if (isSelected) {
-                              const updated = list.filter(item => item.toLowerCase() !== (s.name || '').toLowerCase()).join(', ');
+                              const updated = list.filter(item => item.toLowerCase() !== String(s.name || '').toLowerCase()).join(', ');
                               setEditingTeacher({ ...editingTeacher, subject: updated || 'Umum' });
                             } else {
                               if (list.length === 1 && list[0] === 'Umum') {
@@ -4781,7 +4797,7 @@ export default function AdminPanel({
                         const inputEl = e.currentTarget;
                         const val = inputEl.value.trim();
                         if (val) {
-                          if (onAddSubject && !subjects.some(s => (s.name || '').toLowerCase() === val.toLowerCase())) {
+                          if (onAddSubject && !subjects.some(s => String(s.name || '').toLowerCase() === val.toLowerCase())) {
                             onAddSubject(val);
                           }
                           const list = editingTeacher.subject ? (editingTeacher.subject || '').split(',').map(item => item.trim()).filter(Boolean) : [];
@@ -4804,7 +4820,7 @@ export default function AdminPanel({
                       const inputEl = document.getElementById('custom_subject_input_edit') as HTMLInputElement;
                       if (inputEl && inputEl.value.trim()) {
                         const val = inputEl.value.trim();
-                        if (onAddSubject && !subjects.some(s => (s.name || '').toLowerCase() === val.toLowerCase())) {
+                        if (onAddSubject && !subjects.some(s => String(s.name || '').toLowerCase() === val.toLowerCase())) {
                           onAddSubject(val);
                         }
                         const list = editingTeacher.subject ? (editingTeacher.subject || '').split(',').map(item => item.trim()).filter(Boolean) : [];
@@ -5390,7 +5406,7 @@ export default function AdminPanel({
         const filteredPromoteStudents = activeStudents.filter(s => {
           const matchesClass = promoteFromClassFilter === 'ALL' || s.classId === promoteFromClassFilter;
           const matchesQuery = !promoteSearchQuery || 
-            (s.name || '').toLowerCase().includes(promoteSearchQuery.toLowerCase()) || 
+            String(s.name || '').toLowerCase().includes(promoteSearchQuery.toLowerCase()) || 
             (s.nis || '').includes(promoteSearchQuery);
           return matchesClass && matchesQuery;
         });
