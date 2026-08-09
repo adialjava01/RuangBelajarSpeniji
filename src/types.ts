@@ -11,6 +11,18 @@ export interface SchoolConfig {
   principalNip?: string;
   academicYear?: string;
   semester?: 'Ganjil' | 'Genap';
+  availableAcademicYears?: string[];
+  kopHeader1?: string;
+  kopHeader2?: string;
+  schoolName?: string;
+  schoolAddress?: string;
+  schoolPhone?: string;
+  schoolEmail?: string;
+  schoolWebsite?: string;
+  cityLocation?: string;
+  counselorName?: string;
+  counselorNip?: string;
+  kopModel?: 'Standard' | 'Klasik' | 'Modern' | 'Minimalis';
 }
 
 export interface Teacher {
@@ -201,7 +213,8 @@ export interface CounselingReferral {
   className: string;
   issueCategory: string;
   issueDetails: string;
-  status: 'Menunggu' | 'Diproses' | 'Selesai';
+  status: 'Menunggu' | 'Diproses' | 'Dijadwalkan' | 'Selesai' | 'Ditolak';
+  feedback?: string;
   priority: 'Rendah' | 'Sedang' | 'Tinggi';
   createdAt: string;
 }
@@ -383,6 +396,7 @@ export interface HomeVisit {
   visitResult: string;
   followUp: string;
   status: 'Direncanakan' | 'Selesai';
+  documentNumber?: string;
   createdAt: string;
 }
 
@@ -457,3 +471,17 @@ export interface LivePresentationSession {
   startedAt?: string;
 }
 
+
+export interface StudentCounselingRequest {
+  id: string;
+  studentId: string;
+  studentName: string;
+  className: string;
+  topic: string;
+  description: string;
+  status: 'Menunggu' | 'Dijadwalkan' | 'Diproses' | 'Selesai' | 'Ditolak';
+  requestedAt: number;
+  scheduledAt?: string;
+  feedback?: string;
+  counselorName?: string;
+}

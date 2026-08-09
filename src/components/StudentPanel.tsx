@@ -2,7 +2,7 @@ import toast from 'react-hot-toast';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Student, Material, Exam, ExamQuestion, ExamSubmission, CheatLog, Teacher, SubjectItem, TeacherAnnouncement
-, DailyCheckIn, NeedsAssessment, Sociometry, ClassItem, CareerPlan, AssignmentFolder, AssignmentSubmission, LivePresentationSession, ManualAssessment, SchoolConfig } from '../types';
+, DailyCheckIn, NeedsAssessment, Sociometry, ClassItem, CareerPlan, AssignmentFolder, AssignmentSubmission, LivePresentationSession, ManualAssessment, SchoolConfig, StudentCounselingRequest } from '../types';
 import { 
   BookOpen, FileText, Key, Clock, AlertTriangle, CheckCircle, ShieldAlert, Sparkles, Send, User, GraduationCap,
   Bell, Megaphone, CheckCircle2, Info, X, ChevronLeft, ChevronRight, Grid, AlertOctagon
@@ -23,6 +23,9 @@ interface StudentPanelProps {
   classes?: ClassItem[];
   students?: Student[];
   currentStudent: Student;
+  studentCounselingRequests?: StudentCounselingRequest[];
+  onAddStudentCounselingRequest?: (req: Omit<StudentCounselingRequest, "id" | "requestedAt">) => void;
+  onUpdateStudentCounselingRequest?: (req: StudentCounselingRequest) => void;
   materials: Material[];
   exams: Exam[];
   submissions?: ExamSubmission[];
@@ -97,6 +100,9 @@ export function renderFormattedText(text: string, fontPreset?: 'Sans' | 'Serif' 
 }
 
 export default function StudentPanel({
+  studentCounselingRequests = [],
+  onAddStudentCounselingRequest,
+  onUpdateStudentCounselingRequest,
   dailyCheckIns = [],
   onAddDailyCheckIn,
   onAddNeedsAssessment,
@@ -377,6 +383,9 @@ export default function StudentPanel({
     }
   }, [showSosiometriForm, mySociometry]);
   const [showKarirForm, setShowKarirForm] = useState(false);
+  const [showCounselingForm, setShowCounselingForm] = useState(false);
+  const [counselingTopic, setCounselingTopic] = useState('');
+  const [counselingDesc, setCounselingDesc] = useState('');
   const myCareerPlan = careerPlans.find(cp => cp.studentNis === currentStudent.nis);
   const [karirInterests, setKarirInterests] = useState<string>('');
   const [karirStrengths, setKarirStrengths] = useState<string>('');
@@ -1250,9 +1259,136 @@ export default function StudentPanel({
                 <span className="font-bold text-slate-800">Karir & Peminatan</span>
                 <span className="text-xs text-slate-500">Rencanakan cita-cita & minatmu</span>
               </button>
+              <button onClick={() => setShowCounselingForm(true)} className="p-4 border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center hover:bg-slate-50 transition gap-2 group">
+                <MessageSquare className="w-8 h-8 text-teal-500 group-hover:scale-110 transition" />
+                <span className="font-bold text-slate-800">Ruang Konsultasi BK</span>
+                <span className="text-xs text-slate-500">Ajukan sesi konseling ke Guru BK</span>
+              </button>
 
             </div>
           </div>
+
+          
+          {/* Modal Ruang Konseling */}
+          {showCounselingForm && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-3xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-teal-50">
+                  <div>
+                    <h2 className="text-xl font-black text-teal-900">Ruang Konsultasi & Konseling BK</h2>
+                    <p className="text-sm text-teal-700 mt-1">Ajukan jadwal atau diskusikan masalahmu dengan Guru BK.</p>
+                  </div>
+                  <button onClick={() => setShowCounselingForm(false)} className="p-2 hover:bg-teal-100 rounded-full text-teal-700 transition">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="p-6 overflow-y-auto space-y-6">
+                  {/* Form Pengajuan Baru */}
+                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                    <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Send className="w-5 h-5 text-teal-500" /> Ajukan Konseling Baru</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Topik Konseling *</label>
+                        <select
+                          value={counselingTopic}
+                          onChange={e => setCounselingTopic(e.target.value)}
+                          className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                        >
+                          <option value="">Pilih Topik...</option>
+                          <option value="Pribadi">Masalah Pribadi</option>
+                          <option value="Sosial">Masalah Sosial/Pertemanan</option>
+                          <option value="Belajar">Masalah Belajar/Akademik</option>
+                          <option value="Karir">Bimbingan Karir & Studi Lanjut</option>
+                          <option value="Lainnya">Lainnya</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Ceritakan Singkat Permasalahanmu *</label>
+                        <textarea
+                          value={counselingDesc}
+                          onChange={e => setCounselingDesc(e.target.value)}
+                          placeholder="Ceritakan dengan aman & rahasia. Kenapa kamu butuh konseling?"
+                          rows={4}
+                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                        />
+                      </div>
+                      <button
+                        disabled={!counselingTopic || !counselingDesc.trim() || isSubmitting}
+                        onClick={() => {
+                          if (!onAddStudentCounselingRequest || !currentStudent) return;
+                          setIsSubmitting(true);
+                          try {
+                            onAddStudentCounselingRequest({
+                              studentId: currentStudent.id,
+                              studentName: currentStudent.name,
+                              className: classes.find(c => c.id === currentStudent.classId)?.name || '',
+                              topic: counselingTopic,
+                              description: counselingDesc.trim(),
+                              status: 'Menunggu',
+                            });
+                            toast.success('Permintaan konseling terkirim!');
+                            setCounselingTopic('');
+                            setCounselingDesc(''); setShowCounselingForm(false);
+                          } finally {
+                            setIsSubmitting(false);
+                          }
+                        }}
+                        className="px-6 py-3 bg-teal-600 text-white font-bold rounded-xl hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-md w-full"
+                      >
+                        {isSubmitting ? 'Mengirim...' : 'Kirim Permintaan Konseling'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Riwayat Pengajuan */}
+                  <div>
+                    <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-teal-500" /> Riwayat Permintaanmu</h3>
+                    {!studentCounselingRequests || studentCounselingRequests.filter(r => r.studentId === currentStudent?.id).length === 0 ? (
+                      <p className="text-sm text-slate-500 text-center py-4 border border-dashed border-slate-200 rounded-xl">Belum ada riwayat konseling.</p>
+                    ) : (
+                      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                        {studentCounselingRequests
+                          .filter(r => r.studentId === currentStudent?.id)
+                          .sort((a,b) => b.requestedAt - a.requestedAt)
+                          .map((req, idx) => (
+                          <div key={req.id || idx} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm">
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md">{req.topic}</span>
+                                <span className="text-xs text-slate-400 ml-2">{new Date(req.requestedAt).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short'})}</span>
+                              </div>
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold ${
+                                req.status === 'Menunggu' ? 'bg-amber-100 text-amber-700' :
+                                req.status === 'Dijadwalkan' ? 'bg-blue-100 text-blue-700' : req.status === 'Diproses' ? 'bg-indigo-100 text-indigo-700' :
+                                req.status === 'Selesai' ? 'bg-emerald-100 text-emerald-700' :
+                                'bg-rose-100 text-rose-700'
+                              }`}>
+                                {req.status}
+                              </span>
+                            </div>
+                            <p className="text-sm text-slate-700 font-medium mb-3">{req.description}</p>
+                            
+                            {req.feedback && (
+                              <div className="mt-3 p-3 bg-teal-50 border border-teal-100 rounded-xl">
+                                <p className="text-xs font-bold text-teal-900 mb-1 flex items-center gap-1.5"><MessageSquare className="w-3.5 h-3.5" /> Tanggapan Guru BK:</p>
+                                <p className="text-sm text-teal-800">{req.feedback}</p>
+                                {req.scheduledAt && (
+                                  <div className="mt-2 flex items-center gap-2 text-teal-900 bg-teal-100/50 p-2 rounded-lg font-bold text-xs">
+                                    <Clock className="w-4 h-4" /> Jadwal: {req.scheduledAt}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Modal AKPD */}
           {showAKPDForm && (
@@ -1280,7 +1416,7 @@ export default function StudentPanel({
                   {/* Likert Scale Questions */}
                   <div className="space-y-6">
                     {/* Pribadi */}
-                    <div className="space-y-3">
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                       <h3 className="font-bold text-slate-800 bg-slate-100 p-2 rounded-lg">A. BIDANG PRIBADI (Kematangan Emosi & Kemandirian)</h3>
                       {[
                         { id: 'q1', text: 'Saya merasa sulit mengendalikan emosi saat marah atau kecewa.' },
@@ -1310,7 +1446,7 @@ export default function StudentPanel({
                     </div>
 
                     {/* Sosial */}
-                    <div className="space-y-3">
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                       <h3 className="font-bold text-slate-800 bg-slate-100 p-2 rounded-lg">B. BIDANG SOSIAL (Hubungan Remaja & Adaptasi)</h3>
                       {[
                         { id: 'q5', text: 'Saya merasa canggung atau sulit beradaptasi di lingkungan sekolah baru.' },
@@ -1340,7 +1476,7 @@ export default function StudentPanel({
                     </div>
 
                     {/* Belajar */}
-                    <div className="space-y-3">
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                       <h3 className="font-bold text-slate-800 bg-slate-100 p-2 rounded-lg">C. BIDANG BELAJAR (Metode & Hambatan Akademik SMP)</h3>
                       {[
                         { id: 'q9', text: 'Saya sering menunda-nunda mengerjakan tugas sekolah sampai menumpuk.' },
@@ -1370,7 +1506,7 @@ export default function StudentPanel({
                     </div>
 
                     {/* Karier */}
-                    <div className="space-y-3">
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                       <h3 className="font-bold text-slate-800 bg-slate-100 p-2 rounded-lg">D. BIDANG KARIER (Pengenalan Potensi & Masa Depan)</h3>
                       {[
                         { id: 'q13', text: 'Saya belum mengetahui bakat, minat, atau potensi utama dalam diri saya.' },
@@ -1509,10 +1645,10 @@ export default function StudentPanel({
                       <p className="text-xs text-slate-500 italic">Belum ada teman yang dipilih</p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
-                        {selectedFriends.map(nis => {
+                        {selectedFriends.map((nis, idx) => {
                           const f = students.find(s => s.nis === nis);
                           return (
-                            <div key={nis} className="flex items-center gap-1.5 bg-rose-100 text-rose-800 px-3 py-1.5 rounded-full text-sm font-bold border border-rose-200 shadow-sm">
+                            <div key={`${nis}_${idx}`} className="flex items-center gap-1.5 bg-rose-100 text-rose-800 px-3 py-1.5 rounded-full text-sm font-bold border border-rose-200 shadow-sm">
                               {f?.name}
                               <button onClick={(e) => { e.stopPropagation(); setSelectedFriends(selectedFriends.filter(n => n !== nis)); }} className="hover:text-rose-950 hover:bg-rose-200 p-0.5 rounded-full transition ml-1" title="Hapus pilihan ini">
                                 <X className="w-4 h-4" />
@@ -1528,7 +1664,7 @@ export default function StudentPanel({
                   <div className="space-y-2">
                     {students.filter(s => s.classId === currentStudent.classId && s.nis !== currentStudent.nis).map(friend => (
                       <button
-                        key={friend.nis}
+                        key={friend.id || friend.nis}
                         onClick={() => {
                           if (selectedFriends.includes(friend.nis)) {
                             setSelectedFriends(selectedFriends.filter(nis => nis !== friend.nis));
@@ -1997,7 +2133,7 @@ export default function StudentPanel({
                       key={item.id}
                       className="p-5 bg-white border border-slate-200/90 rounded-2xl shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
                     >
-                      <div className="space-y-3">
+                      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 uppercase">
                             {targetSubject?.name || 'Mata Pelajaran'}
@@ -2200,7 +2336,7 @@ export default function StudentPanel({
             }} className="space-y-4">
 
               {submitType === 'direct_file' ? (
-                <div className="space-y-3">
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                   <div className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 rounded-2xl p-6 text-center transition group relative">
                     <input
                       type="file"
@@ -2292,7 +2428,7 @@ export default function StudentPanel({
                   )}
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                   <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs space-y-2">
                     <p className="font-bold text-slate-800">📌 Petunjuk Pengumpulan Google Drive:</p>
                     <ol className="list-decimal list-inside text-slate-600 space-y-1">
@@ -2504,7 +2640,7 @@ export default function StudentPanel({
                         : (mySub?.essayGraded === true && exam.showScoreToStudent !== false);
 
                       return (
-                        <div className="space-y-3">
+                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                           {mySub && (
                             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between text-xs text-emerald-900 font-bold">
                               <span className="flex items-center gap-1.5">
@@ -2861,7 +2997,7 @@ export default function StudentPanel({
                         )}
 
                         {q.type === 'Uraian' && (
-                          <div className="space-y-3">
+                          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                             <textarea
                               placeholder="Ketikkan jawaban uraian / essay Anda di sini..."
                               value={studentAnswers[q.id] || ''}
@@ -2872,7 +3008,7 @@ export default function StudentPanel({
                         )}
 
                         {q.type === 'SebabAkibat' && (
-                          <div className="space-y-3">
+                          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                             <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1.5 text-slate-700">
                               <p><strong>Pernyataan:</strong> "{q.statement}"</p>
                               <p><strong>Alasan:</strong> "{q.reason}"</p>
@@ -3298,7 +3434,7 @@ export default function StudentPanel({
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
               {studentAnnouncements
                 .filter(a => !readAnnouncements.includes(a.id))
                 .slice(0, 3)

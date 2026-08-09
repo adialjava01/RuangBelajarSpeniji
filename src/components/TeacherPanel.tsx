@@ -3883,7 +3883,7 @@ export default function TeacherPanel({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
-                          {classStudents.map(s => (
+                          {classStudents.map((s, idx) => (
                             <tr key={s.id} className="hover:bg-slate-50/50 transition">
                               <td className="px-6 py-3 font-bold text-slate-900 text-center">{s.noAbsen || '-'}</td>
                               <td className="px-6 py-3 font-bold text-slate-900">{s.name} <span className="text-[10px] text-slate-400 font-mono">({s.nis})</span></td>
@@ -5552,7 +5552,7 @@ export default function TeacherPanel({
                                     const isPass = validScores.length > 0 && avg >= rekapKkm;
 
                                     return (
-                                      <tr key={student.id} className="hover:bg-slate-50/80 transition-colors">
+                                      <tr key={`${student.id}_${idx}`} className="hover:bg-slate-50/80 transition-colors">
                                         <td className="py-2.5 px-3 text-center border-r border-slate-100 font-medium text-slate-500">
                                           {student.noAbsen || idx + 1}
                                         </td>
@@ -6714,8 +6714,8 @@ export default function TeacherPanel({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
-                          {filteredLogs.map((log) => (
-                            <tr key={log.id} className="hover:bg-red-50/20 transition">
+                          {filteredLogs.map((log, idx) => (
+                            <tr key={`${log.id}_${idx}`} className="hover:bg-red-50/20 transition">
                               <td className="p-3.5 text-slate-500 font-mono text-[11px] whitespace-nowrap">
                                 {new Date(log.timestamp).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                               </td>
@@ -7342,7 +7342,7 @@ export default function TeacherPanel({
                   {students
                     .filter(s => refClassId ? s.classId === refClassId : true)
                     .map(s => (
-                    <option key={s.nis} value={s.nis}>{s.name} ({classes.find(c => c.id === s.classId)?.name || 'N/A'})</option>
+                    <option key={s.id} value={s.nis}>{s.name} ({classes.find(c => c.id === s.classId)?.name || 'N/A'})</option>
                   ))}
                 </datalist>
               </div>

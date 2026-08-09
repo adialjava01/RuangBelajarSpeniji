@@ -1,7 +1,7 @@
 import toast, { Toaster } from 'react-hot-toast';
 import React, { useState, useEffect } from 'react';
 import { 
-  Teacher, Student, ClassItem, SubjectItem, Material, JournalEntry, Exam, CheatLog, ExamSubmission, TeacherAnnouncement, RegistrationRequest, SchoolConfig, QuestionBank, ShareRequest, GlobalAnnouncement, TeacherScheduleNote, TeachingModule, ManualAssessment, CounselingReferral, CounselingSession 
+  Teacher, Student, ClassItem, SubjectItem, Material, JournalEntry, Exam, CheatLog, ExamSubmission, TeacherAnnouncement, RegistrationRequest, SchoolConfig, QuestionBank, ShareRequest, GlobalAnnouncement, TeacherScheduleNote, TeachingModule, ManualAssessment, CounselingReferral, CounselingSession, StudentCounselingRequest
 , DailyCheckIn, NeedsAssessment, Sociometry, HomeVisit, CareerPlan, AssignmentFolder, AssignmentSubmission, LivePresentationSession } from './types';
 import AdminPanel from './components/AdminPanel';
 import TeacherPanel from './components/TeacherPanel';
@@ -25,7 +25,18 @@ const DEFAULT_SCHOOL_CONFIG: SchoolConfig = {
   footerText: '© 2026 E-Learning/E-Jurnal SMPN 1 BEJI, Kab. Pasuruan.',
   adminPassword: 'admin123',
   principalName: 'Yayuk Sudarwati, S.Pd., M.Pd.',
-  principalNip: '197002071997032005'
+  principalNip: '197002071997032005',
+  kopHeader1: 'PEMERINTAH KABUPATEN PASURUAN',
+  kopHeader2: 'DINAS PENDIDIKAN DAN KEBUDAYAAN',
+  schoolName: 'SMP NEGERI 1 BEJI',
+  schoolAddress: 'Jl. Raya Beji No. 123, Pasuruan, Jawa Timur',
+  schoolPhone: '(0343) 656123',
+  schoolEmail: 'info@smpn1beji.sch.id',
+  schoolWebsite: 'smpn1beji.sch.id',
+  cityLocation: 'Pasuruan',
+  counselorName: 'Dra. Siti Rahmah, M.Pd.',
+  counselorNip: '197505122003122001',
+  kopModel: 'Standard'
 };
 
 // === INITIAL SEED DATA ===
@@ -282,6 +293,7 @@ export default function App() {
   const [cheatLogs, setCheatLogs] = useState<CheatLog[]>([]);
   const [counselingReferrals, setCounselingReferrals] = useState<CounselingReferral[]>([]);
   const [counselingSessions, setCounselingSessions] = useState<CounselingSession[]>([]);
+  const [studentCounselingRequests, setStudentCounselingRequests] = useState<StudentCounselingRequest[]>([]);
   const [dailyCheckIns, setDailyCheckIns] = useState<DailyCheckIn[]>([]);
   const [needsAssessments, setNeedsAssessments] = useState<NeedsAssessment[]>([]);
   const [sociometries, setSociometries] = useState<Sociometry[]>([]);
@@ -350,6 +362,7 @@ export default function App() {
     const unsubCheatLogs = syncCollection('cheatLogs', setCheatLogs, []);
     const unsubCounselingReferrals = syncCollection('counselingReferrals', setCounselingReferrals, []);
     const unsubCounselingSessions = syncCollection('counselingSessions', setCounselingSessions, []);
+    const unsubStudentCounselingRequests = syncCollection('studentCounselingRequests', setStudentCounselingRequests, []);
     const unsubDailyCheckIns = syncCollection('dailyCheckIns', setDailyCheckIns, []);
     const unsubNeedsAssessments = syncCollection('needsAssessments', setNeedsAssessments, []);
     const unsubSociometries = syncCollection('sociometries', setSociometries, []);
@@ -386,6 +399,7 @@ export default function App() {
       unsubCheatLogs();
       unsubCounselingReferrals();
       unsubCounselingSessions();
+      unsubStudentCounselingRequests();
       unsubDailyCheckIns();
       unsubNeedsAssessments();
       unsubSociometries();
@@ -716,17 +730,55 @@ export default function App() {
   };
 
   const handleAddReferral = (ref: Omit<CounselingReferral, 'id' | 'createdAt'>) => { addDocument('counselingReferrals', { ...ref, id: `cr_${Math.random().toString(36).substring(7)}`, createdAt: new Date().toISOString() }); };
-  const handleUpdateReferral = (id: string, status: 'Diproses' | 'Selesai') => { updateDocument('counselingReferrals', { id, status }); };
-  const handleSaveSession = (session: Omit<CounselingSession, 'id'>) => { addDocument('counselingSessions', { ...session, id: `cs_${Math.random().toString(36).substring(7)}` }); };
+  const handleUpdateReferral = (updated: CounselingReferral) => { updateDocument('counselingReferrals', updated); };
+  const handleDeleteReferral = (id: string) => { deleteDocument('counselingReferrals', id); };
+  const handleSaveSession = (session: Omit<CounselingSession, 'id'>) => {
+    const newSession = { ...session, id: `cs_${Math.random().toString(36).substring(7)}` };
+    addDocument('counselingSessions', newSession);
+    setCounselingSessions(prev => [newSession, ...prev]);
+  };
+  const handleUpdateSession = (id: string, updates: Partial<CounselingSession>) => {
+    updateDocument('counselingSessions', { id, ...updates });
+    setCounselingSessions(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+  };
+  const handleDeleteSession = (id: string) => {
+    deleteDocument('counselingSessions', id);
+    setCounselingSessions(prev => prev.filter(s => s.id !== id));
+  };
+  const handleAddStudentCounselingRequest = (req: Omit<StudentCounselingRequest, 'id' | 'requestedAt'>) => { addDocument('studentCounselingRequests', { ...req, id: `scr_${Math.random().toString(36).substring(7)}`, requestedAt: Date.now() }); };
+  const handleUpdateStudentCounselingRequest = (req: StudentCounselingRequest) => { updateDocument('studentCounselingRequests', req); };
+  const handleDeleteStudentCounselingRequest = (id: string) => { deleteDocument('studentCounselingRequests', id); };
   const handleAddDailyCheckIn = (checkIn: Omit<DailyCheckIn, 'id' | 'createdAt'>) => { addDocument('dailyCheckIns', { ...checkIn, id: `dc_${Math.random().toString(36).substring(7)}`, createdAt: new Date().toISOString() }); };
   const handleAddNeedsAssessment = (assessment: Omit<NeedsAssessment, 'id' | 'createdAt'>) => { addDocument('needsAssessments', { ...assessment, id: `na_${Math.random().toString(36).substring(7)}`, createdAt: new Date().toISOString() }); };
   const handleAddSociometry = (sociometry: Omit<Sociometry, 'id' | 'createdAt'>) => { addDocument('sociometries', { ...sociometry, id: `soc_${Math.random().toString(36).substring(7)}`, createdAt: new Date().toISOString() }); };
   const handleUpdateSociometry = (id: string, updates: Partial<Sociometry>) => { updateDocument('sociometries', { id, ...updates }); };
   const handleDeleteSociometry = (id: string) => { deleteDocument('sociometries', id); };
-  const handleAddHomeVisit = (visit: Omit<HomeVisit, 'id' | 'createdAt'>) => { addDocument('homeVisits', { ...visit, id: `hv_${Math.random().toString(36).substring(7)}`, createdAt: new Date().toISOString() }); };
-  const handleUpdateHomeVisit = (id: string, updates: Partial<HomeVisit>) => { updateDocument('homeVisits', { id, ...updates }); };
-  const handleAddCareerPlan = (plan: Omit<CareerPlan, 'id' | 'updatedAt'>) => { addDocument('careerPlans', { ...plan, id: `cp_${Math.random().toString(36).substring(7)}`, updatedAt: new Date().toISOString() }); };
-  const handleUpdateCareerPlan = (id: string, updates: Partial<CareerPlan>) => { updateDocument('careerPlans', { id, ...updates, updatedAt: new Date().toISOString() }); };
+  const handleAddHomeVisit = (visit: Omit<HomeVisit, 'id' | 'createdAt'>) => {
+    const newHv = { ...visit, id: `hv_${Math.random().toString(36).substring(7)}`, createdAt: new Date().toISOString() };
+    addDocument('homeVisits', newHv);
+    setHomeVisits(prev => [newHv, ...prev]);
+  };
+  const handleUpdateHomeVisit = (id: string, updates: Partial<HomeVisit>) => {
+    updateDocument('homeVisits', { id, ...updates });
+    setHomeVisits(prev => prev.map(v => v.id === id ? { ...v, ...updates } : v));
+  };
+  const handleDeleteHomeVisit = (id: string) => {
+    deleteDocument('homeVisits', id);
+    setHomeVisits(prev => prev.filter(v => v.id !== id));
+  };
+  const handleAddCareerPlan = (plan: Omit<CareerPlan, 'id' | 'updatedAt'>) => {
+    const newCp = { ...plan, id: `cp_${Math.random().toString(36).substring(7)}`, updatedAt: new Date().toISOString() };
+    addDocument('careerPlans', newCp);
+    setCareerPlans(prev => [newCp, ...prev]);
+  };
+  const handleUpdateCareerPlan = (id: string, updates: Partial<CareerPlan>) => {
+    updateDocument('careerPlans', { id, ...updates, updatedAt: new Date().toISOString() });
+    setCareerPlans(prev => prev.map(cp => cp.id === id ? { ...cp, ...updates, updatedAt: new Date().toISOString() } : cp));
+  };
+  const handleDeleteCareerPlan = (id: string) => {
+    deleteDocument('careerPlans', id);
+    setCareerPlans(prev => prev.filter(cp => cp.id !== id));
+  };
 
   const handleAddCheatLog = React.useCallback((log: Omit<CheatLog, 'id' | 'timestamp'>) => {
     const logNode: CheatLog = {
@@ -1379,7 +1431,7 @@ export default function App() {
               <AdminPanel
                 teachers={teachers}
                 students={students}
-                classes={classes}
+                classes={sortedClasses}
                 subjects={subjects}
                 journals={journals}
                 questionBanks={questionBanks}
@@ -1408,6 +1460,7 @@ export default function App() {
                 exams={exams}
                 counselingReferrals={counselingReferrals}
                 counselingSessions={counselingSessions}
+                studentCounselingRequests={studentCounselingRequests}
                 dailyCheckIns={dailyCheckIns}
                 needsAssessments={needsAssessments}
                 sociometries={sociometries}
@@ -1435,7 +1488,7 @@ export default function App() {
             {currentRole === 'Teacher' && activeUser && (
               <TeacherPanel
                 currentTeacher={activeUser}
-                classes={classes}
+                classes={sortedClasses}
                 subjects={subjects}
                 students={students}
                 materials={materials}
@@ -1500,7 +1553,13 @@ export default function App() {
 
             {/* COUNSELOR PANEL */}
             {currentRole === 'Counselor' && (
-              <CounselorPanel activeUser={activeUser}
+              <CounselorPanel
+                schoolConfig={schoolConfig}
+                onUpdateSchoolConfig={saveSchoolConfigState}
+                studentCounselingRequests={studentCounselingRequests}
+                onUpdateStudentCounselingRequest={handleUpdateStudentCounselingRequest}
+                onDeleteStudentCounselingRequest={handleDeleteStudentCounselingRequest}
+                activeUser={activeUser}
                 dailyCheckIns={dailyCheckIns}
                 needsAssessments={needsAssessments}
                 sociometries={sociometries}
@@ -1508,20 +1567,28 @@ export default function App() {
                 careerPlans={careerPlans}
                 onAddHomeVisit={handleAddHomeVisit}
                 onUpdateHomeVisit={handleUpdateHomeVisit}
+                onDeleteHomeVisit={handleDeleteHomeVisit}
                 onAddCareerPlan={handleAddCareerPlan}
                 onUpdateCareerPlan={handleUpdateCareerPlan}
+                onDeleteCareerPlan={handleDeleteCareerPlan}
                 referrals={counselingReferrals}
                 sessions={counselingSessions}
                 students={students}
-                classes={classes}
+                classes={sortedClasses}
                 teachers={teachers}
                 onUpdateReferral={handleUpdateReferral}
+                onDeleteReferral={handleDeleteReferral}
                 onSaveSession={handleSaveSession}
+                onUpdateSession={handleUpdateSession}
+                onDeleteSession={handleDeleteSession}
               />
             )}
             {/* STUDENT PANEL MOUNTED */}
             {currentRole === 'Student' && activeUser && (
               <StudentPanel
+                studentCounselingRequests={studentCounselingRequests}
+                onAddStudentCounselingRequest={handleAddStudentCounselingRequest}
+                onUpdateStudentCounselingRequest={handleUpdateStudentCounselingRequest}
                 dailyCheckIns={dailyCheckIns}
                 onAddDailyCheckIn={handleAddDailyCheckIn}
                 onAddNeedsAssessment={handleAddNeedsAssessment}
@@ -1532,7 +1599,7 @@ export default function App() {
                 careerPlans={careerPlans}
                 onAddCareerPlan={handleAddCareerPlan}
                 onUpdateCareerPlan={handleUpdateCareerPlan}
-                classes={classes}
+                classes={sortedClasses}
                 students={students}
                 currentStudent={activeUser}
                 materials={materials}

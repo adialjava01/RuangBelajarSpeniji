@@ -10,11 +10,11 @@ import { SCHOOL_LOGO_BASE64 } from '../assets/schoolLogo';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { restoreDatabaseBatch, addDocument } from '../firebaseSync';
 import { 
-  Teacher, Student, ClassItem, SubjectItem, JournalEntry, CheatLog, ExamSubmission, RegistrationRequest, SchoolConfig, GlobalAnnouncement, TeachingModule, QuestionBank, Material, Exam, CounselingReferral, CounselingSession, DailyCheckIn, NeedsAssessment, Sociometry, HomeVisit, CareerPlan, ManualAssessment, TeacherAnnouncement, ShareRequest, AssignmentFolder, AssignmentSubmission, TeacherScheduleNote, LivePresentationSession
+  Teacher, Student, ClassItem, SubjectItem, JournalEntry, CheatLog, ExamSubmission, RegistrationRequest, SchoolConfig, GlobalAnnouncement, TeachingModule, QuestionBank, Material, Exam, CounselingReferral, CounselingSession, StudentCounselingRequest, DailyCheckIn, NeedsAssessment, Sociometry, HomeVisit, CareerPlan, ManualAssessment, TeacherAnnouncement, ShareRequest, AssignmentFolder, AssignmentSubmission, TeacherScheduleNote, LivePresentationSession
 } from '../types';
 import { 
   Users, BookOpen, GraduationCap, Calendar, Plus, Trash2, Search, Upload, ShieldAlert, Award, ArrowUpRight, UserCheck, Clock, CheckCircle, XCircle, Edit, Settings, FileSpreadsheet, Download, ArrowRight, KeyRound, MonitorSmartphone, BarChart, TrendingUp, FileText
-, Send, ArrowLeft, Folder, X, Printer, Database, Save, RefreshCw, FileUp, FileDown, HardDrive, CheckCircle2, AlertTriangle, Layers, ShieldCheck, FileJson, Square, CheckSquare } from 'lucide-react';
+, Send, ArrowLeft, Folder, X, Printer, Database, Save, RefreshCw, FileUp, FileDown, HardDrive, CheckCircle2, AlertTriangle, Layers, ShieldCheck, FileJson, Square, CheckSquare, Edit2 } from 'lucide-react';
 
 interface AdminPanelProps {
   teachers: Teacher[];
@@ -28,6 +28,7 @@ interface AdminPanelProps {
   exams?: Exam[];
   counselingReferrals?: CounselingReferral[];
   counselingSessions?: CounselingSession[];
+  studentCounselingRequests?: StudentCounselingRequest[];
   dailyCheckIns?: DailyCheckIn[];
   needsAssessments?: NeedsAssessment[];
   sociometries?: Sociometry[];
@@ -85,6 +86,7 @@ export default function AdminPanel({
   exams = [],
   counselingReferrals = [],
   counselingSessions = [],
+  studentCounselingRequests = [],
   dailyCheckIns = [],
   needsAssessments = [],
   sociometries = [],
@@ -433,6 +435,8 @@ export default function AdminPanel({
   const [activeTab, setActiveTab] = useState<'dashboard' | 'teachers' | 'students' | 'journals' | 'teaching_modules' | 'cheatlogs' | 'classes' | 'registrations' | 'config' | 'archived_students' | 'announcements' | 'bank_soal' | 'backup'>('dashboard');
   const [showAddAnnModal, setShowAddAnnModal] = useState(false);
   const [newAnn, setNewAnn] = useState({ title: '', content: '', targetRole: 'All' as 'All' | 'Teacher' | 'Student' });
+  const [newAcYear, setNewAcYear] = useState('');
+  const [editingAcYear, setEditingAcYear] = useState<{index: number, value: string} | null>(null);
   const pendingCount = (registrations || []).filter(r => r.status === 'Pending').length;
 
   // Backup & Restore Database states
@@ -471,6 +475,7 @@ export default function AdminPanel({
     if (backupOptions.includeBkData) {
       exportPayload.counselingReferrals = counselingReferrals;
       exportPayload.counselingSessions = counselingSessions;
+      exportPayload.studentCounselingRequests = studentCounselingRequests;
       exportPayload.dailyCheckIns = dailyCheckIns;
       exportPayload.needsAssessments = needsAssessments;
       exportPayload.sociometries = sociometries;
@@ -1269,6 +1274,74 @@ export default function AdminPanel({
     (s.nis || '').includes(searchStudent)
   );
 
+  const formatAcademicYear = (input: string) => {
+    // Standardize input (e.g. " 2026 - 2027 " -> "2026/2027")
+    return input.trim().replace(/\s+/g, '').replace('-', '/');
+  };
+
+  const validateAcademicYear = (year: string, skipDuplicateCheck = false) => {
+    const regex = /^\d{4}\/\d{4}$/;
+    if (!regex.test(year)) {
+      toast.error('Format tidak valid. Gunakan format YYYY/YYYY (contoh: 2026/2027)');
+      return false;
+    }
+    if (!skipDuplicateCheck) {
+      const currentYears = localConfig.availableAcademicYears || ['2024/2025', '2025/2026', '2026/2027'];
+      if (currentYears.includes(year)) {
+        toast.error('Tahun ajaran sudah ada dalam daftar');
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const handleAddAcademicYear = () => {
+    const trimmed = formatAcademicYear(newAcYear);
+    if (!trimmed) return;
+    if (!validateAcademicYear(trimmed)) return;
+
+    const newYears = [...(localConfig.availableAcademicYears || ['2024/2025', '2025/2026', '2026/2027']), trimmed];
+    setLocalConfig({ ...localConfig, availableAcademicYears: newYears });
+    setNewAcYear('');
+  };
+
+  const handleSaveEditAcademicYear = (index: number) => {
+    if (!editingAcYear) return;
+    const trimmed = formatAcademicYear(editingAcYear.value);
+    if (!trimmed) return;
+    
+    const currentYears = localConfig.availableAcademicYears || ['2024/2025', '2025/2026', '2026/2027'];
+    if (trimmed === currentYears[index]) {
+      setEditingAcYear(null);
+      return;
+    }
+
+    if (!validateAcademicYear(trimmed)) return;
+
+    const oldYear = currentYears[index];
+    const newYears = [...currentYears];
+    newYears[index] = trimmed;
+    
+    setLocalConfig({ 
+      ...localConfig, 
+      availableAcademicYears: newYears, 
+      academicYear: localConfig.academicYear === oldYear ? trimmed : localConfig.academicYear 
+    });
+    setEditingAcYear(null);
+  };
+
+  const handleDeleteAcademicYear = (index: number, year: string) => {
+    if (confirm(`Hapus tahun ajaran ${year}?`)) {
+      const currentYears = localConfig.availableAcademicYears || ['2024/2025', '2025/2026', '2026/2027'];
+      const newYears = currentYears.filter((_, i) => i !== index);
+      setLocalConfig({ 
+        ...localConfig, 
+        availableAcademicYears: newYears,
+        academicYear: localConfig.academicYear === year ? (newYears[0] || '') : localConfig.academicYear
+      });
+    }
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto" id="admin-panel-container">
       {/* Navigation Sidebar */}
@@ -1784,21 +1857,114 @@ export default function AdminPanel({
                     </select>
                   </div>
                 </div>
-                <div className="flex gap-2 pt-1">
-                  {['2024/2025', '2025/2026', '2026/2027'].map(year => (
-                    <button
-                      key={year}
-                      type="button"
-                      onClick={() => setLocalConfig({...localConfig, academicYear: year})}
-                      className={`px-2 py-1 text-[11px] font-bold rounded-md border transition cursor-pointer ${
-                        (localConfig.academicYear || '2025/2026') === year 
-                          ? 'bg-emerald-600 text-white border-emerald-600' 
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {year}
-                    </button>
-                  ))}
+                <div className="flex flex-col gap-2 pt-2 border-t border-emerald-100 mt-2">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-[11px] font-bold text-slate-600">Pilih / Kelola Tahun:</span>
+                    {(localConfig.availableAcademicYears || ['2024/2025', '2025/2026', '2026/2027']).map((year, index) => (
+                      <div key={index} className="flex items-center">
+                        {editingAcYear?.index === index ? (
+                          <div className="flex items-center gap-0.5 bg-white border border-emerald-400 rounded-md overflow-hidden pl-2 ring-2 ring-emerald-100">
+                            <input
+                              type="text"
+                              value={editingAcYear.value}
+                              onChange={(e) => setEditingAcYear({ ...editingAcYear, value: e.target.value })}
+                              className="w-20 sm:w-24 text-[11px] font-bold text-slate-700 outline-none"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleSaveEditAcademicYear(index);
+                                } else if (e.key === 'Escape') {
+                                  setEditingAcYear(null);
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditAcademicYear(index)}
+                              className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition"
+                              title="Simpan"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingAcYear(null)}
+                              className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 transition"
+                              title="Batal"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className={`flex items-stretch rounded-md border transition overflow-hidden shadow-sm ${
+                            (localConfig.academicYear || '2025/2026') === year 
+                              ? 'border-emerald-600 ring-1 ring-emerald-600' 
+                              : 'border-slate-200 bg-white hover:border-emerald-300'
+                          }`}>
+                            <button
+                              type="button"
+                              onClick={() => setLocalConfig({...localConfig, academicYear: year})}
+                              className={`px-2.5 py-1 text-[11px] font-bold cursor-pointer transition ${
+                                (localConfig.academicYear || '2025/2026') === year 
+                                  ? 'bg-emerald-600 text-white' 
+                                  : 'text-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              {year}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingAcYear({ index, value: year })}
+                              className={`px-1.5 transition border-l flex items-center justify-center cursor-pointer ${
+                                (localConfig.academicYear || '2025/2026') === year 
+                                  ? 'bg-emerald-700 border-emerald-700 text-emerald-200 hover:text-white hover:bg-emerald-800' 
+                                  : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+                              }`}
+                              title="Edit"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAcademicYear(index, year)}
+                              className={`px-1.5 transition border-l flex items-center justify-center cursor-pointer ${
+                                (localConfig.academicYear || '2025/2026') === year 
+                                  ? 'bg-emerald-700 border-emerald-700 text-emerald-200 hover:text-white hover:bg-red-600' 
+                                  : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-red-600 hover:bg-red-50'
+                              }`}
+                              title="Hapus"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-md overflow-hidden pl-2 shadow-sm focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-400 transition-all">
+                      <input
+                        type="text"
+                        placeholder="Tahun baru..."
+                        value={newAcYear}
+                        onChange={(e) => setNewAcYear(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddAcademicYear();
+                          }
+                        }}
+                        className="w-20 text-[11px] text-slate-700 outline-none placeholder:text-slate-400 font-medium bg-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddAcademicYear}
+                        className="p-1.5 bg-slate-50 hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition cursor-pointer border-l border-slate-100"
+                        title="Tambah Tahun"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <p className="text-[11px] text-slate-500">Tahun Ajaran & Semester ini akan digunakan sebagai filter default pada Rekap Leger, Jurnal Mengajar, Tugas, dan Ujian.</p>
               </div>
@@ -2039,8 +2205,8 @@ export default function AdminPanel({
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-slate-50 bg-white">
-                                        {classStudents.map((siswa) => (
-                                          <tr key={siswa.id} className="hover:bg-slate-50/80 transition">
+                                        {classStudents.map((siswa, idx) => (
+                                          <tr key={`${siswa.id}_${idx}`} className="hover:bg-slate-50/80 transition">
                                             <td className="px-5 py-2.5 font-bold text-slate-700 text-center">{siswa.noAbsen || '-'}</td>
                                             <td className="px-5 py-2.5 font-bold text-slate-900">{siswa.name}</td>
                                             <td className="px-5 py-2.5 text-center text-slate-600 font-semibold">{siswa.gender || '-'}</td>
@@ -2167,8 +2333,8 @@ export default function AdminPanel({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
-                          {groupedStudents['unassigned'].map((siswa) => (
-                            <tr key={siswa.id} className="hover:bg-slate-50 transition">
+                          {groupedStudents['unassigned'].map((siswa, idx) => (
+                            <tr key={`${siswa.id}_${idx}`} className="hover:bg-slate-50 transition">
                               <td className="px-6 py-3 font-bold text-slate-900 text-center">{siswa.noAbsen || '-'}</td>
                               <td className="px-6 py-3 font-bold text-slate-900">{siswa.name}</td>
                               <td className="px-6 py-3 text-center text-slate-600 font-semibold">{siswa.gender || '-'}</td>
@@ -2283,8 +2449,8 @@ export default function AdminPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {filteredArchivedStudents.map((siswa) => (
-                  <tr key={siswa.id} className="hover:bg-slate-50 transition opacity-80">
+                {filteredArchivedStudents.map((siswa, idx) => (
+                  <tr key={`${siswa.id}_${idx}`} className="hover:bg-slate-50 transition opacity-80">
                     <td className="px-6 py-3 font-bold text-slate-900">{siswa.name}</td>
                     <td className="px-6 py-3 text-center text-slate-600 font-semibold">{siswa.gender || '-'}</td>
                     <td className="px-6 py-3 font-mono font-semibold text-slate-600">{siswa.nis}</td>
@@ -2474,8 +2640,8 @@ export default function AdminPanel({
                     className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                   >
                     <option value="ALL">Semua Mapel</option>
-                    {subjects.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
+                    {subjects.map((s, idx) => (
+                      <option key={`${s.id}_${idx}`} value={s.id}>{s.name}</option>
                     ))}
                   </select>
                 </div>
@@ -2672,8 +2838,8 @@ export default function AdminPanel({
                   className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                 >
                   <option value="ALL">Semua Mapel</option>
-                  {subjects.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
+                  {subjects.map((s, idx) => (
+                    <option key={`${s.id}_${idx}`} value={s.id}>{s.name}</option>
                   ))}
                 </select>
               </div>
@@ -2897,8 +3063,8 @@ export default function AdminPanel({
                     className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                   >
                     <option value="ALL">Semua Mapel</option>
-                    {subjects.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
+                    {subjects.map((s, idx) => (
+                      <option key={`${s.id}_${idx}`} value={s.id}>{s.name}</option>
                     ))}
                   </select>
                 </div>
@@ -3077,8 +3243,8 @@ export default function AdminPanel({
                   className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                 >
                   <option value="ALL">Semua Mapel</option>
-                  {subjects.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
+                  {subjects.map((s, idx) => (
+                    <option key={`${s.id}_${idx}`} value={s.id}>{s.name}</option>
                   ))}
                 </select>
               </div>
@@ -3330,8 +3496,8 @@ export default function AdminPanel({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
-                          {filteredLogs.map((log) => (
-                            <tr key={log.id} className="hover:bg-red-50/20 transition">
+                          {filteredLogs.map((log, idx) => (
+                            <tr key={`${log.id}_${idx}`} className="hover:bg-red-50/20 transition">
                               <td className="px-4 py-3 whitespace-nowrap text-slate-500 font-mono text-[11px]">
                                 {new Date(log.timestamp).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                               </td>
@@ -3897,10 +4063,10 @@ export default function AdminPanel({
             <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-2xl space-y-1">
               <span className="text-[10px] font-black uppercase text-emerald-600 tracking-wider">Ruang BK (Konseling)</span>
               <div className="text-xl font-black text-emerald-950">
-                {counselingReferrals.length + counselingSessions.length + dailyCheckIns.length + needsAssessments.length + sociometries.length + homeVisits.length + careerPlans.length} Records
+                {counselingReferrals.length + counselingSessions.length + studentCounselingRequests.length + dailyCheckIns.length + needsAssessments.length + sociometries.length + homeVisits.length + careerPlans.length} Records
               </div>
               <p className="text-[11px] text-slate-500 font-medium">
-                {counselingSessions.length} Sesi BK • {counselingReferrals.length} Rujukan
+                {counselingSessions.length} Sesi BK • {counselingReferrals.length} Rujukan • {studentCounselingRequests.length} Permintaan
               </p>
             </div>
 
@@ -4064,7 +4230,7 @@ export default function AdminPanel({
                       <div>👨‍🏫 Guru: <strong className="text-slate-900">{(restorePreview.teachers || []).length}</strong></div>
                       <div>👨‍🎓 Siswa: <strong className="text-slate-900">{(restorePreview.students || []).length}</strong></div>
                       <div>🏫 Kelas & Mapel: <strong className="text-slate-900">{(restorePreview.classes || []).length} K. / {(restorePreview.subjects || []).length} M.</strong></div>
-                      <div>💚 Sesi & Referal BK: <strong className="text-slate-900">{(restorePreview.counselingSessions || []).length + (restorePreview.counselingReferrals || []).length}</strong></div>
+                      <div>💚 Layanan, Sesi & Referal BK: <strong className="text-slate-900">{(restorePreview.counselingSessions || []).length + (restorePreview.counselingReferrals || []).length + (restorePreview.studentCounselingRequests || []).length + (restorePreview.dailyCheckIns || []).length + (restorePreview.needsAssessments || []).length + (restorePreview.sociometries || []).length + (restorePreview.homeVisits || []).length + (restorePreview.careerPlans || []).length}</strong></div>
                       <div>📝 Jurnal & Catatan: <strong className="text-slate-900">{(restorePreview.journals || []).length} J. / {(restorePreview.scheduleNotes || []).length} C.</strong></div>
                       <div>📁 Tugas Drive & Submisi: <strong className="text-slate-900">{(restorePreview.assignmentFolders || []).length} T. / {(restorePreview.assignmentSubmissions || []).length} S.</strong></div>
                       <div>📑 Perangkat & Bank Soal: <strong className="text-slate-900">{(restorePreview.teachingModules || []).length} P. / {(restorePreview.questionBanks || []).length} B.</strong></div>
@@ -4379,12 +4545,12 @@ export default function AdminPanel({
                 <div>
                   <p className="text-[11px] font-semibold text-slate-500 mb-1.5">Klik kotak mapel untuk menambah / mengurangi pilihan:</p>
                   <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1">
-                    {subjects.map(s => {
+                    {subjects.map((s, idx) => {
                       const currentList = newTeacher.subject ? (newTeacher.subject || '').split(',').map(item => item.trim().toLowerCase()) : [];
                       const isSelected = currentList.includes(String(s.name || '').toLowerCase());
                       return (
                         <button
-                          key={s.id}
+                          key={`${s.id}_${idx}`}
                           type="button"
                           onClick={() => {
                             const list = newTeacher.subject ? (newTeacher.subject || '').split(',').map(item => item.trim()).filter(Boolean) : [];
@@ -4750,12 +4916,12 @@ export default function AdminPanel({
                 <div>
                   <p className="text-[11px] font-semibold text-slate-500 mb-1.5">Klik kotak mapel di bawah untuk menambah / mengurangi pilihan:</p>
                   <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1">
-                    {subjects.map(s => {
+                    {subjects.map((s, idx) => {
                       const currentList = editingTeacher.subject ? (editingTeacher.subject || '').split(',').map(item => item.trim().toLowerCase()) : [];
                       const isSelected = currentList.includes(String(s.name || '').toLowerCase());
                       return (
                         <button
-                          key={s.id}
+                          key={`${s.id}_${idx}`}
                           type="button"
                           onClick={() => {
                             const list = editingTeacher.subject ? (editingTeacher.subject || '').split(',').map(item => item.trim()).filter(Boolean) : [];
@@ -5612,7 +5778,7 @@ export default function AdminPanel({
 
                         return (
                           <tr 
-                            key={s.id} 
+                            key={`${s.id}_${idx}`} 
                             className={`hover:bg-amber-50/40 transition ${
                               isChecked ? 'bg-amber-50/60' : ''
                             } ${isMoved ? 'bg-emerald-50/20' : ''}`}

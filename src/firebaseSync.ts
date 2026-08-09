@@ -131,7 +131,7 @@ export async function restoreDatabaseBatch(backupData: Record<string, any>, mode
   const collectionsToRestore = [
     'teachers', 'students', 'classes', 'subjects', 'materials', 'teachingModules',
     'exams', 'questionBanks', 'journals', 'cheatLogs', 'counselingReferrals',
-    'counselingSessions', 'dailyCheckIns', 'needsAssessments', 'sociometries',
+    'counselingSessions', 'studentCounselingRequests', 'dailyCheckIns', 'needsAssessments', 'sociometries',
     'homeVisits', 'careerPlans', 'submissions', 'manualAssessments',
     'announcements', 'registrations', 'shareRequests', 'globalAnnouncements',
     'assignmentFolders', 'assignmentSubmissions', 'scheduleNotes', 'livePresentations'
