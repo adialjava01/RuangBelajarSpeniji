@@ -45,12 +45,13 @@ body {
   line-height: 1.75;
 }
 
-/* Quill Viewer overrides for StudentPanel */
+/* Quill Viewer overrides for StudentPanel and TeacherPanel */
 .quill-content img {
   max-width: 100%;
   height: auto;
   border-radius: 0.5rem;
-  margin: 1rem 0;
+  margin: 0.75rem 0;
+  display: inline-block;
 }
 .quill-content iframe {
   width: 100%;
@@ -61,14 +62,97 @@ body {
 .quill-content h1, .quill-content h2, .quill-content h3 {
   color: #0f172a;
   font-weight: 800;
-  margin-top: 1.5em;
-  margin-bottom: 0.5em;
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+.quill-content h1 { font-size: 1.25rem; }
+.quill-content h2 { font-size: 1.1rem; }
+.quill-content h3 { font-size: 1rem; }
+.quill-content p {
+  margin-bottom: 0.5rem;
+}
+.quill-content p:last-child {
+  margin-bottom: 0;
 }
 .quill-content ul, .quill-content ol {
   padding-left: 1.5rem;
-  margin: 1rem 0;
+  margin: 0.5rem 0;
   list-style: inherit;
 }
+.quill-content ul {
+  list-style-type: disc;
+}
+.quill-content ol {
+  list-style-type: decimal;
+}
 .quill-content li {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.quill-content blockquote {
+  border-left: 4px solid #6366f1;
+  background-color: #f8fafc;
+  padding: 0.6rem 1rem;
+  margin: 0.75rem 0;
+  border-radius: 0 0.5rem 0.5rem 0;
+  color: #334155;
+  font-style: italic;
+}
+.quill-content pre, .quill-content .ql-syntax {
+  background-color: #0f172a;
+  color: #38bdf8;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+  border: 1px solid #1e293b;
+}
+.quill-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.825rem;
+  background: white;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+}
+.quill-content th, .quill-content td {
+  border: 1px solid #cbd5e1;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.quill-content th {
+  background-color: #f1f5f9;
+  font-weight: 700;
+  color: #1e293b;
+}
+.quill-content sub {
+  vertical-align: sub;
+  font-size: 0.75em;
+}
+.quill-content sup {
+  vertical-align: super;
+  font-size: 0.75em;
+}
+
+/* Question Editor Specific Quill wrapper */
+.question-quill-editor .ql-container {
+  min-height: 180px;
+  max-height: 420px;
+  overflow-y: auto;
+  font-size: 0.925rem;
+}
+.question-quill-editor .ql-editor {
+  min-height: 170px;
+  line-height: 1.7;
+}
+.question-quill-editor .ql-toolbar {
+  border-color: #cbd5e1 !important;
+  background-color: #f8fafc !important;
+  padding: 0.5rem !important;
+}
+.question-quill-editor .ql-container.ql-snow {
+  border-color: #cbd5e1 !important;
 }

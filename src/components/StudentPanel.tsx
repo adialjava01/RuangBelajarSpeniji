@@ -53,6 +53,17 @@ export function renderFormattedText(text: string, fontPreset?: 'Sans' | 'Serif' 
   if (fontPreset === 'Grotesk') fontClass = 'font-sans tracking-tight font-extrabold text-slate-900';
   if (fontPreset === 'Mono') fontClass = 'font-mono text-xs text-slate-800 bg-slate-50/50 p-2.5 rounded-lg border border-slate-200/50';
 
+  // Check if text contains rich HTML tags (produced by rich text editor)
+  const isHtml = /<[a-z][\s\S]*>/i.test(text);
+  if (isHtml) {
+    return (
+      <div
+        className={`quill-content ${fontClass} leading-relaxed text-slate-900 overflow-x-auto`}
+        dangerouslySetInnerHTML={{ __html: text }}
+      />
+    );
+  }
+
   // Split text by markdown bold, italic, underline, code, and links
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\([^)]+\))/g);
 
@@ -426,6 +437,9 @@ export default function StudentPanel({
     score: number;
     totalPoints: number;
     maxPoints: number;
+    pgTotalEarned?: number;
+    pgTotalMax?: number;
+    essayCount?: number;
     answers: any[];
   } | null>(null);
 
@@ -685,87 +699,92 @@ export default function StudentPanel({
     if (!activeExam) return;
 
     let totalPoints = 0;
-    const maxPoints = activeExam.questions.length;
+    let maxPoints = 0;
+    let pgTotalEarned = 0;
+    let pgTotalMax = 0;
+    let essayCount = 0;
     const evaluatedAnswers: any[] = [];
 
     activeExam.questions.forEach(q => {
+      const qWeight = Number(q.score) || 1;
+      maxPoints += qWeight;
       const studentAns = studentAnswers[q.id];
       let isCorrect = false;
       let pointsEarned = 0;
 
-      switch (q.type) {
-        case 'PilihanGanda':
-          if (studentAns && String(studentAns).trim().toUpperCase() === String(q.correctAnswer).trim().toUpperCase()) {
-            isCorrect = true;
-            pointsEarned = 1;
-          }
-          break;
-
-        case 'PilihanGandaKompleks':
-          if (Array.isArray(studentAns) && Array.isArray(q.correctAnswers)) {
-            const sortedStudent = [...studentAns].sort();
-            const sortedCorrect = [...q.correctAnswers].sort();
-            if (JSON.stringify(sortedStudent) === JSON.stringify(sortedCorrect)) {
+      if (q.type === 'Uraian') {
+        essayCount++;
+        isCorrect = false;
+        pointsEarned = 0;
+      } else {
+        pgTotalMax += qWeight;
+        switch (q.type) {
+          case 'PilihanGanda':
+            if (studentAns && String(studentAns).trim().toUpperCase() === String(q.correctAnswer).trim().toUpperCase()) {
               isCorrect = true;
-              pointsEarned = 1;
+              pointsEarned = qWeight;
             }
-          }
-          break;
+            break;
 
-        case 'PilihanAsosiatif':
-          if (studentAns) {
-            const correctCombination = q.correctCombination || [];
-            let computedKey = '';
-            
-            const has1 = correctCombination.includes(1);
-            const has2 = correctCombination.includes(2);
-            const has3 = correctCombination.includes(3);
-            const has4 = correctCombination.includes(4);
-            const count = correctCombination.length;
-
-            if (has1 && has2 && has3 && count === 3) computedKey = 'A';
-            else if (has1 && has3 && count === 2) computedKey = 'B';
-            else if (has2 && has4 && count === 2) computedKey = 'C';
-            else if (has4 && count === 1) computedKey = 'D';
-            else if (has1 && has2 && has3 && has4 && count === 4) computedKey = 'E';
-
-            if (String(studentAns).trim().toUpperCase() === computedKey) {
-              isCorrect = true;
-              pointsEarned = 1;
+          case 'PilihanGandaKompleks':
+            if (Array.isArray(studentAns) && Array.isArray(q.correctAnswers)) {
+              const sortedStudent = [...studentAns].sort();
+              const sortedCorrect = [...q.correctAnswers].sort();
+              if (JSON.stringify(sortedStudent) === JSON.stringify(sortedCorrect)) {
+                isCorrect = true;
+                pointsEarned = qWeight;
+              }
             }
-          }
-          break;
+            break;
 
-        case 'SebabAkibat':
-          if (studentAns) {
-            let computedKey = '';
-            const pBenar = q.correctStatementTrue;
-            const aBenar = q.correctReasonTrue;
-            const hubSebab = q.correctCausality;
+          case 'PilihanAsosiatif':
+            if (studentAns) {
+              const correctCombination = q.correctCombination || [];
+              let computedKey = '';
+              const has1 = correctCombination.includes(1);
+              const has2 = correctCombination.includes(2);
+              const has3 = correctCombination.includes(3);
+              const has4 = correctCombination.includes(4);
+              const count = correctCombination.length;
 
-            if (pBenar && aBenar && hubSebab) computedKey = 'A';
-            else if (pBenar && aBenar && !hubSebab) computedKey = 'B';
-            else if (pBenar && !aBenar) computedKey = 'C';
-            else if (!pBenar && aBenar) computedKey = 'D';
-            else if (!pBenar && !aBenar) computedKey = 'E';
+              if (has1 && has2 && has3 && count === 3) computedKey = 'A';
+              else if (has1 && has3 && count === 2) computedKey = 'B';
+              else if (has2 && has4 && count === 2) computedKey = 'C';
+              else if (has4 && count === 1) computedKey = 'D';
+              else if (has1 && has2 && has3 && has4 && count === 4) computedKey = 'E';
 
-            if (String(studentAns).trim().toUpperCase() === computedKey) {
-              isCorrect = true;
-              pointsEarned = 1;
+              if (String(studentAns).trim().toUpperCase() === computedKey) {
+                isCorrect = true;
+                pointsEarned = qWeight;
+              }
             }
-          }
-          break;
+            break;
 
-        case 'Uraian':
-          // Uraian questions require manual teacher grading.
-          // Initial auto-score is 0 until teacher manually evaluates and approves points.
-          isCorrect = false;
-          pointsEarned = 0;
-          break;
-      }
+          case 'SebabAkibat':
+            if (studentAns) {
+              let computedKey = '';
+              const pBenar = q.correctStatementTrue;
+              const aBenar = q.correctReasonTrue;
+              const hubSebab = q.correctCausality;
 
-      if (isCorrect) {
-        totalPoints += pointsEarned;
+              if (pBenar && aBenar && hubSebab) computedKey = 'A';
+              else if (pBenar && aBenar && !hubSebab) computedKey = 'B';
+              else if (pBenar && !aBenar) computedKey = 'C';
+              else if (!pBenar && aBenar) computedKey = 'D';
+              else if (!pBenar && !aBenar) computedKey = 'E';
+
+              if (String(studentAns).trim().toUpperCase() === computedKey) {
+                isCorrect = true;
+                pointsEarned = qWeight;
+              }
+            }
+            break;
+        }
+
+        if (isCorrect) {
+          totalPoints += pointsEarned;
+          pgTotalEarned += pointsEarned;
+        }
       }
 
       evaluatedAnswers.push({
@@ -778,8 +797,8 @@ export default function StudentPanel({
       });
     });
 
-    const hasEssayQuestions = activeExam.questions.some(q => q.type === 'Uraian');
-    const finalScore = Math.round((totalPoints / maxPoints) * 100) || 0;
+    const hasEssayQuestions = essayCount > 0;
+    const finalScore = maxPoints > 0 ? Math.round((totalPoints / maxPoints) * 100) : 0;
 
     // Send to main app spreadsheet storage
     onSubmitExam({
@@ -798,6 +817,9 @@ export default function StudentPanel({
       score: finalScore,
       totalPoints,
       maxPoints,
+      pgTotalEarned,
+      pgTotalMax,
+      essayCount,
       answers: evaluatedAnswers
     });
 
@@ -3264,10 +3286,27 @@ export default function StudentPanel({
             </div>
 
             {hasEssayQuestions ? (
-              <div className="bg-amber-50/80 rounded-2xl p-6 border border-amber-200/80 max-w-md mx-auto space-y-2 text-amber-950">
-                <span className="text-xs font-black uppercase tracking-wider block text-amber-800">Ujian Soal Uraian (Essay)</span>
-                <p className="text-xs font-medium leading-relaxed">
-                  Ujian ini memuat soal Uraian. Nilai hasil belajar akan tersedia dan diperbarui di Leger setelah dikoreksi oleh Guru.
+              <div className="bg-amber-50/90 rounded-2xl p-6 border border-amber-200 max-w-md mx-auto space-y-3 text-amber-950 text-left">
+                <div className="flex items-center gap-2 text-center justify-center">
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-900 bg-amber-200/70 px-2.5 py-1 rounded-full">
+                    Ujian Kombinasi (PG & Uraian)
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-center text-slate-700 leading-relaxed">
+                  Ujian memuat <strong>{scoreResult.essayCount || 5} soal uraian</strong> yang memerlukan pemeriksaan manual oleh Guru.
+                </p>
+                <div className="bg-white p-3.5 rounded-xl border border-amber-200/80 shadow-2xs space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span>Skor Otomatis Soal Objektif (PG):</span>
+                    <span className="font-extrabold text-indigo-700 text-sm">{scoreResult.pgTotalEarned ?? scoreResult.totalPoints} / {scoreResult.pgTotalMax ?? scoreResult.maxPoints} Poin</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span>Status 5 Soal Uraian:</span>
+                    <span className="font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded text-[11px]">Menunggu Penilaian Guru</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-amber-800 text-center leading-normal">
+                  💡 Guru akan memberikan skor manual pada jawaban uraian Anda dan nilai total akhir otomatis dijumlahkan ke dalam Rekap / Leger Nilai.
                 </p>
               </div>
             ) : showScore ? (

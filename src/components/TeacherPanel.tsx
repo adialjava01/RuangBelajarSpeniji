@@ -19,7 +19,7 @@ import {
   FileSpreadsheet, Upload, AlertCircle, Clipboard, Download, Info, Printer, Filter, BarChart3, X, Settings, Building, UserCheck, ShieldAlert,
   Edit3, Camera, User, Image, MapPin, Bell, Megaphone, AlertTriangle, Sparkles, Send, Database, CheckCircle, FileCode, Users,
   Folder, FolderPlus, Scissors, ClipboardPaste, Copy, CornerUpLeft, ArrowLeft, Search, Tv, Radio, Eye, Play, Square, Maximize2, Minimize2, MousePointer, ChevronLeft, ChevronRight, Lock, Unlock, ExternalLink,
-  Award, TrendingUp, CheckCircle2, XCircle, Sliders, FileCheck, Layers
+  Award, TrendingUp, CheckCircle2, XCircle, Sliders, FileCheck, Layers, Code, Calculator, Table, RotateCcw
 } from 'lucide-react';
 
 export interface SchoolIdentityConfig {
@@ -104,6 +104,17 @@ export function renderFormattedText(text: string, fontPreset?: 'Sans' | 'Serif' 
   if (fontPreset === 'Serif') fontClass = 'font-serif tracking-normal font-normal text-slate-800';
   if (fontPreset === 'Grotesk') fontClass = 'font-sans tracking-tight font-extrabold text-slate-900';
   if (fontPreset === 'Mono') fontClass = 'font-mono text-xs text-slate-800 bg-slate-50/50 p-2.5 rounded-lg border border-slate-200/50';
+
+  // Check if text contains rich HTML tags (produced by rich text editor)
+  const isHtml = /<[a-z][\s\S]*>/i.test(text);
+  if (isHtml) {
+    return (
+      <div
+        className={`quill-content ${fontClass} leading-relaxed text-slate-900 overflow-x-auto`}
+        dangerouslySetInnerHTML={{ __html: text }}
+      />
+    );
+  }
 
   // Split text by markdown bold, italic, underline, code, and links
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\([^)]+\))/g);
@@ -1786,6 +1797,9 @@ export default function TeacherPanel({
   // --- 4.7. PENILAIAN & KOREKSI SOAL URAIAN STATE ---
   const [selectedSubmissionForGrading, setSelectedSubmissionForGrading] = useState<ExamSubmission | null>(null);
   const [gradingMethod, setGradingMethod] = useState<'PER_SOAL' | 'TOTAL_LANGSUNG'>('PER_SOAL');
+  const [essayGradingScheme, setEssayGradingScheme] = useState<'PROPORTIONAL' | 'DIRECT_SUM' | 'PERCENTAGE'>('PROPORTIONAL');
+  const [pgWeightPercent, setPgWeightPercent] = useState<number>(70);
+  const [essayWeightPercent, setEssayWeightPercent] = useState<number>(30);
   const [essayScoresState, setEssayScoresState] = useState<{ [qId: string]: number }>({});
   const [essayNotesState, setEssayNotesState] = useState<{ [qId: string]: string }>({});
   const [directTotalScoreState, setDirectTotalScoreState] = useState<number>(0);
@@ -1795,6 +1809,7 @@ export default function TeacherPanel({
     setSelectedSubmissionForGrading(sub);
     setGradingMethod(sub.manualTotalScore !== undefined ? 'TOTAL_LANGSUNG' : 'PER_SOAL');
     
+    const exam = teacherExams.find(e => e.id === sub.examId);
     const initialScores: { [qId: string]: number } = {};
     const initialNotes: { [qId: string]: string } = {};
     
@@ -1808,6 +1823,15 @@ export default function TeacherPanel({
       }
       initialNotes[ans.questionId] = ans.teacherNote || '';
     });
+
+    if (exam) {
+      exam.questions.forEach(q => {
+        if (q.type === 'Uraian' && initialScores[q.id] === undefined) {
+          initialScores[q.id] = 0;
+          initialNotes[q.id] = '';
+        }
+      });
+    }
 
     setEssayScoresState(initialScores);
     setEssayNotesState(initialNotes);
@@ -1826,54 +1850,83 @@ export default function TeacherPanel({
     if (gradingMethod === 'TOTAL_LANGSUNG') {
       computedFinalScore = Math.max(0, Math.min(100, Number(directTotalScoreState) || 0));
     } else {
-      let totalEarned = 0;
-      let totalMaxPoints = 0;
+      let pgEarned = 0;
+      let pgMax = 0;
+      let essayEarned = 0;
+      let essayMax = 0;
 
       exam.questions.forEach(q => {
-        const qWeight = q.score || 1;
-        totalMaxPoints += qWeight;
-
+        const qWeight = Number(q.score) || 1;
         const studentAns = selectedSubmissionForGrading.answers.find(a => a.questionId === q.id);
 
         if (q.type === 'Uraian') {
-          const teacherVal = Number(essayScoresState[q.id]) || 0;
-          totalEarned += teacherVal;
+          essayMax += qWeight;
+          essayEarned += Number(essayScoresState[q.id]) || 0;
         } else {
+          pgMax += qWeight;
           if (studentAns?.isCorrect) {
-            totalEarned += qWeight;
+            pgEarned += qWeight;
           } else if (studentAns?.pointsEarned) {
-            totalEarned += studentAns.pointsEarned;
+            pgEarned += studentAns.pointsEarned;
           }
         }
       });
 
-      computedFinalScore = totalMaxPoints > 0 
-        ? Math.round((totalEarned / totalMaxPoints) * 100)
-        : selectedSubmissionForGrading.score;
+      if (essayGradingScheme === 'DIRECT_SUM') {
+        // Penjumlahan Murni Langsung: PG Points + Essay Points
+        computedFinalScore = Math.round(pgEarned + essayEarned);
+      } else if (essayGradingScheme === 'PERCENTAGE') {
+        // Pembobotan Persentase (misal 70% PG + 30% Uraian)
+        const pgPct = pgMax > 0 ? (pgEarned / pgMax) * 100 : 0;
+        const essayPct = essayMax > 0 ? (essayEarned / essayMax) * 100 : 0;
+        const wPg = (Number(pgWeightPercent) || 70) / 100;
+        const wEssay = (Number(essayWeightPercent) || 30) / 100;
+        computedFinalScore = Math.round((pgPct * wPg) + (essayPct * wEssay));
+      } else {
+        // PROPORTIONAL: (pgEarned + essayEarned) / (pgMax + essayMax) * 100
+        const totalMaxPoints = pgMax + essayMax;
+        const totalEarned = pgEarned + essayEarned;
+        computedFinalScore = totalMaxPoints > 0 
+          ? Math.round((totalEarned / totalMaxPoints) * 100)
+          : selectedSubmissionForGrading.score;
+      }
       
       computedFinalScore = Math.max(0, Math.min(100, computedFinalScore));
     }
 
-    const updatedAnswers = selectedSubmissionForGrading.answers.map(ans => {
-      const q = exam.questions.find(item => item.id === ans.questionId);
-      if (q && q.type === 'Uraian') {
+    // Update answers array with essay scores
+    const existingAnswers = [...selectedSubmissionForGrading.answers];
+    exam.questions.forEach(q => {
+      if (q.type === 'Uraian') {
+        const existingIdx = existingAnswers.findIndex(a => a.questionId === q.id);
         const val = Number(essayScoresState[q.id]) || 0;
-        return {
-          ...ans,
-          essayScore: val,
-          pointsEarned: val,
-          isCorrect: val > 0,
-          teacherNote: essayNotesState[q.id] || ''
-        };
+        const note = essayNotesState[q.id] || '';
+        if (existingIdx >= 0) {
+          existingAnswers[existingIdx] = {
+            ...existingAnswers[existingIdx],
+            essayScore: val,
+            pointsEarned: val,
+            isCorrect: val > 0,
+            teacherNote: note
+          };
+        } else {
+          existingAnswers.push({
+            questionId: q.id,
+            studentAnswer: '',
+            isCorrect: val > 0,
+            pointsEarned: val,
+            essayScore: val,
+            teacherNote: note
+          });
+        }
       }
-      return ans;
     });
 
     const updatedSubmission: ExamSubmission = {
       ...selectedSubmissionForGrading,
       score: computedFinalScore,
       manualTotalScore: gradingMethod === 'TOTAL_LANGSUNG' ? Number(directTotalScoreState) : undefined,
-      answers: updatedAnswers,
+      answers: existingAnswers,
       essayGraded: true,
       teacherFeedback: overallFeedbackState
     };
@@ -1884,7 +1937,7 @@ export default function TeacherPanel({
       addDocument('submissions', updatedSubmission);
     }
 
-    toast.success(`Penilaian uraian untuk ${selectedSubmissionForGrading.studentName} berhasil disimpan! Nilai otomatis tersimpan di Leger.`);
+    toast.success(`Penilaian uraian untuk ${selectedSubmissionForGrading.studentName} berhasil disimpan! Nilai total akhir (${computedFinalScore}) otomatis tersinkron ke Leger Nilai.`);
     setSelectedSubmissionForGrading(null);
   };
 
@@ -2106,13 +2159,42 @@ export default function TeacherPanel({
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importSuccessCount, setImportSuccessCount] = useState<number>(0);
 
+  // Rich Question Stimulus Editor State
+  const [qEditorTab, setQEditorTab] = useState<'visual' | 'code' | 'preview'>('visual');
+  const [showMathSymbols, setShowMathSymbols] = useState(false);
+  const [isEditorExpanded, setIsEditorExpanded] = useState(false);
+
   const insertTextAtCursor = (before: string, after: string = '') => {
     setQText(prev => prev + before + (after ? 'teks' + after : ''));
   };
 
+  const handleInsertTemplate = (templateType: 'literasi' | 'koding' | 'tabel' | 'kasus') => {
+    let snippet = '';
+    if (templateType === 'literasi') {
+      snippet = `<blockquote><p><strong>[JUDUL WACANA / TEKS LITERASI]</strong></p><p>Tuliskan stimulus narasi atau teks bacaan di sini secara rinci dan menarik untuk dianalisis oleh peserta didik...</p><p><em>Sumber: Bahan Bacaan Pembelajaran / Asesmen Nasional (2025)</em></p></blockquote><p>Berdasarkan informasi pada wacana di atas, hal pokok yang dibahas adalah...</p>`;
+    } else if (templateType === 'koding') {
+      snippet = `<p>Perhatikan potongan kode program di bawah ini:</p><pre class="ql-syntax" spellcheck="false">// Program Analisis Informatika\nfunction prosesData(nilai) {\n    let hasil = 0;\n    for (let i = 1; i &lt;= nilai; i++) {\n        hasil += i;\n    }\n    return hasil;\n}</pre><p>Jika fungsi <code>prosesData(4)</code> dieksekusi, output nilai kembalian yang dihasilkan adalah...</p>`;
+    } else if (templateType === 'tabel') {
+      snippet = `<p>Perhatikan tabel data hasil observasi berikut:</p><table><thead><tr><th>No</th><th>Variabel / Sampel</th><th>Hasil Pengukuran</th><th>Keterangan</th></tr></thead><tbody><tr><td>1</td><td>Pengujian A</td><td>85% (Optimal)</td><td>Sesuai Standar</td></tr><tr><td>2</td><td>Pengujian B</td><td>92% (Tinggi)</td><td>Melebihi Target</td></tr></tbody></table><p>Berdasarkan tabel data di atas, pernyataan yang paling tepat adalah...</p>`;
+    } else if (templateType === 'kasus') {
+      snippet = `<div style="background-color: #f0fdf4; border: 1px solid #86efac; border-left: 5px solid #16a34a; padding: 12px 16px; border-radius: 8px; margin-bottom: 12px;"><h4 style="color:#15803d; font-weight: bold; margin-bottom: 4px;">📌 STUDI KASUS & ANALISIS</h4><p style="color:#166534; font-size: 13px;">Sebuah laboratorium sekolah mengalami kendala saat sejumlah perangkat komputer tidak dapat terhubung ke server lokal saat ujian dimulai...</p></div><p>Berdasarkan studi kasus di atas, langkah penanganan teknis yang paling tepat adalah...</p>`;
+    }
+
+    if (snippet) {
+      setQText(prev => (prev && prev !== '<p><br></p>' ? prev + '<br>' + snippet : snippet));
+      toast.success('Template stimulus berhasil disisipkan!');
+    }
+  };
+
+  const handleInsertSymbol = (sym: string) => {
+    setQText(prev => (prev && prev !== '<p><br></p>' ? prev + sym : sym));
+    toast.success(`Simbol ${sym} disisipkan!`);
+  };
+
   const handleAddQuestionToExam = () => {
-    if (!qText.trim()) {
-      toast('Teks pertanyaan tidak boleh kosong!');
+    const cleanText = qText.replace(/<[^>]*>/g, '').trim();
+    if (!cleanText && !qText.includes('<img') && !qText.includes('<table')) {
+      toast('Teks pertanyaan / stimulus tidak boleh kosong!');
       return;
     }
 
@@ -2214,6 +2296,7 @@ export default function TeacherPanel({
     setQMediaUrl('');
     setQScore(10);
     setQFontPreset('Sans');
+    setUraianAnswer('');
   };
 
   const handleEditQuestion = (idx: number) => {
@@ -5107,23 +5190,82 @@ export default function TeacherPanel({
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-slate-400 block">Rincian Komposisi Soal ANBK:</span>
-                    <div className="flex gap-2 flex-wrap text-[9px] font-semibold">
-                      <span className="bg-white border px-1.5 py-0.5 rounded text-slate-600">
-                        Pilihan Ganda: {exam.questions.filter(q => q.type === 'PilihanGanda').length}
+                  <div className="space-y-2 pt-1 border-t border-slate-200/50">
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">Komposisi Butir Soal:</span>
+                    <div className="flex gap-1.5 flex-wrap text-[9px] font-semibold">
+                      <span className="bg-white border px-2 py-0.5 rounded text-slate-600 shadow-2xs">
+                        Pilihan Ganda: <strong>{exam.questions.filter(q => q.type === 'PilihanGanda').length}</strong>
                       </span>
-                      <span className="bg-white border px-1.5 py-0.5 rounded text-slate-600">
-                        Pilihan Kompleks: {exam.questions.filter(q => q.type === 'PilihanGandaKompleks').length}
-                      </span>
-                      <span className="bg-white border px-1.5 py-0.5 rounded text-slate-600">
-                        Asosiatif: {exam.questions.filter(q => q.type === 'PilihanAsosiatif').length}
-                      </span>
-                      <span className="bg-white border px-1.5 py-0.5 rounded text-slate-600">
-                        Sebab-Akibat: {exam.questions.filter(q => q.type === 'SebabAkibat').length}
-                      </span>
+                      {exam.questions.some(q => q.type === 'PilihanGandaKompleks') && (
+                        <span className="bg-white border px-2 py-0.5 rounded text-slate-600 shadow-2xs">
+                          Kompleks: <strong>{exam.questions.filter(q => q.type === 'PilihanGandaKompleks').length}</strong>
+                        </span>
+                      )}
+                      {exam.questions.some(q => q.type === 'PilihanAsosiatif') && (
+                        <span className="bg-white border px-2 py-0.5 rounded text-slate-600 shadow-2xs">
+                          Asosiatif: <strong>{exam.questions.filter(q => q.type === 'PilihanAsosiatif').length}</strong>
+                        </span>
+                      )}
+                      {exam.questions.some(q => q.type === 'SebabAkibat') && (
+                        <span className="bg-white border px-2 py-0.5 rounded text-slate-600 shadow-2xs">
+                          Sebab-Akibat: <strong>{exam.questions.filter(q => q.type === 'SebabAkibat').length}</strong>
+                        </span>
+                      )}
+                      {exam.questions.some(q => q.type === 'Uraian') && (
+                        <span className="bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded text-indigo-700 font-extrabold shadow-2xs">
+                          ✍️ Uraian (Esai): <strong>{exam.questions.filter(q => q.type === 'Uraian').length}</strong>
+                        </span>
+                      )}
                     </div>
                   </div>
+
+                  {/* Submission and Grading Status Bar */}
+                  {(() => {
+                    const examSubs = teacherSubmissions.filter(s => s.examId === exam.id);
+                    const hasEssay = exam.questions.some(q => q.type === 'Uraian');
+                    const uncheckCount = hasEssay ? examSubs.filter(s => !s.essayGraded).length : 0;
+                    const primaryClassId = Array.isArray(exam.classId) ? exam.classId[0] : exam.classId;
+
+                    return (
+                      <div className="pt-2 border-t border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] font-extrabold text-slate-700 bg-slate-200/70 px-2.5 py-1 rounded-lg">
+                            👥 {examSubs.length} Siswa Mengumpulkan
+                          </span>
+
+                          {hasEssay && examSubs.length > 0 && (
+                            uncheckCount > 0 ? (
+                              <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-[10px] inline-flex items-center gap-1 animate-pulse">
+                                <AlertCircle className="w-3 h-3 text-amber-600" /> {uncheckCount} Perlu Koreksi Uraian
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] inline-flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3 text-emerald-600" /> Semua Uraian Dinilai
+                              </span>
+                            )
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedClassForGrades(primaryClassId);
+                            setSelectedExamForGrades(exam.id);
+                            setGradeViewMode('evaluations');
+                            setActiveTab('daftar_nilai');
+                          }}
+                          className={`text-xs font-black px-3.5 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0 ${
+                            uncheckCount > 0
+                              ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                              : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                          }`}
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          {hasEssay ? 'Koreksi Uraian & Nilai Siswa' : 'Lihat Hasil Nilai'}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -5953,73 +6095,156 @@ export default function TeacherPanel({
                       )}
                     </div>
                     
-                    <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
                       <table className="w-full text-left text-sm whitespace-nowrap">
-                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 text-xs uppercase tracking-wider">
                           <tr>
-                            <th className="px-4 py-3 font-bold w-12 text-center">No</th>
-                            <th className="px-4 py-3 font-bold">NIS</th>
-                            <th className="px-4 py-3 font-bold w-1/4">Nama Siswa</th>
-                            <th className="px-4 py-3 font-bold text-center">Nilai Final</th>
-                            <th className="px-4 py-3 font-bold text-center">Status Koreksi Uraian</th>
-                            <th className="px-4 py-3 font-bold text-center">Waktu Pengerjaan</th>
-                            <th className="px-4 py-3 font-bold text-center">Aksi Penilaian</th>
+                            <th className="px-3.5 py-3 font-bold w-12 text-center">No</th>
+                            <th className="px-3.5 py-3 font-bold">NIS</th>
+                            <th className="px-3.5 py-3 font-bold">Nama Siswa</th>
+                            <th className="px-3.5 py-3 font-bold text-center">Skor PG (Otomatis)</th>
+                            <th className="px-3.5 py-3 font-bold text-center">Skor 5 Uraian (Manual)</th>
+                            <th className="px-3.5 py-3 font-bold text-center">Total Nilai Akhir</th>
+                            <th className="px-3.5 py-3 font-bold text-center">Status Koreksi</th>
+                            <th className="px-3.5 py-3 font-bold text-center">Waktu Kirim</th>
+                            <th className="px-3.5 py-3 font-bold text-center">Aksi Penilaian</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {teacherSubmissions.filter(s => s.examId === selectedExamForGrades).length === 0 ? (
                             <tr>
-                              <td colSpan={7} className="px-4 py-8 text-center text-slate-500 text-sm italic">
+                              <td colSpan={9} className="px-4 py-8 text-center text-slate-500 text-sm italic">
                                 Belum ada siswa yang mengumpulkan tugas/ujian ini.
                               </td>
                             </tr>
                           ) : (() => {
                             const currentExamObj = teacherExams.find(e => e.id === selectedExamForGrades);
                             const hasEssayQuestions = currentExamObj?.questions.some(q => q.type === 'Uraian');
+                            const essayQuestions = currentExamObj?.questions.filter(q => q.type === 'Uraian') || [];
+                            const pgQuestions = currentExamObj?.questions.filter(q => q.type !== 'Uraian') || [];
 
                             return teacherSubmissions
                               .filter(s => s.examId === selectedExamForGrades)
                               .sort(sortSubmissions)
-                              .map((s, idx) => (
-                                <tr key={s.id} className="hover:bg-slate-50 transition-colors">
-                                  <td className="px-4 py-3 text-center text-slate-500">{idx + 1}</td>
-                                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{s.studentNis}</td>
-                                  <td className="px-4 py-3 font-bold text-slate-800">{s.studentName}</td>
-                                  <td className="px-4 py-3 text-center">
-                                    <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md font-extrabold text-sm ${s.score >= 70 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                      {s.score}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 text-center">
-                                    {!hasEssayQuestions ? (
-                                      <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2.5 py-1 rounded-lg">
-                                        Hanya Objektif
+                              .map((s, idx) => {
+                                // Calculate PG Points
+                                let pgEarned = 0;
+                                let pgMax = 0;
+                                let pgCorrectCount = 0;
+                                pgQuestions.forEach(q => {
+                                  const qWeight = Number(q.score) || 1;
+                                  pgMax += qWeight;
+                                  const ans = (s.answers || []).find(a => a.questionId === q.id);
+                                  if (ans?.isCorrect) {
+                                    pgCorrectCount++;
+                                    pgEarned += qWeight;
+                                  } else if (ans?.pointsEarned) {
+                                    pgEarned += ans.pointsEarned;
+                                  }
+                                });
+                                const pgPct = pgMax > 0 ? Math.round((pgEarned / pgMax) * 100) : 0;
+
+                                // Calculate Essay Points
+                                let essayEarned = 0;
+                                let essayMax = 0;
+                                essayQuestions.forEach(q => {
+                                  const qWeight = Number(q.score) || 10;
+                                  essayMax += qWeight;
+                                  const ans = (s.answers || []).find(a => a.questionId === q.id);
+                                  if (ans?.essayScore !== undefined) {
+                                    essayEarned += Number(ans.essayScore) || 0;
+                                  } else if (ans?.pointsEarned !== undefined) {
+                                    essayEarned += Number(ans.pointsEarned) || 0;
+                                  }
+                                });
+
+                                return (
+                                  <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                                    <td className="px-3.5 py-3 text-center text-slate-500 font-medium">{idx + 1}</td>
+                                    <td className="px-3.5 py-3 font-mono text-xs text-slate-600 font-semibold">{s.studentNis}</td>
+                                    <td className="px-3.5 py-3 font-bold text-slate-900">{s.studentName}</td>
+                                    
+                                    {/* PG SCORE */}
+                                    <td className="px-3.5 py-3 text-center">
+                                      <div className="inline-flex flex-col items-center">
+                                        <span className="font-extrabold text-xs text-indigo-900 bg-indigo-50 px-2.5 py-0.5 rounded-md border border-indigo-100">
+                                          {pgCorrectCount}/{pgQuestions.length} Benar
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                          ({pgEarned}/{pgMax} Poin • {pgPct}%)
+                                        </span>
+                                      </div>
+                                    </td>
+
+                                    {/* ESSAY SCORE */}
+                                    <td className="px-3.5 py-3 text-center">
+                                      {!hasEssayQuestions ? (
+                                        <span className="text-slate-400 text-xs italic">-</span>
+                                      ) : s.essayGraded ? (
+                                        <div className="inline-flex flex-col items-center">
+                                          <span className="font-extrabold text-xs text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1">
+                                            <CheckCircle className="w-3 h-3 text-emerald-600" /> {essayEarned} / {essayMax} Poin
+                                          </span>
+                                          <span className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                            ({essayQuestions.length} Soal Uraian)
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-extrabold px-2 py-0.5 rounded-md inline-flex items-center gap-1 animate-pulse">
+                                          <AlertCircle className="w-3 h-3 text-amber-600" /> Belum Dinilai ({essayQuestions.length} Soal)
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* TOTAL FINAL SCORE */}
+                                    <td className="px-3.5 py-3 text-center">
+                                      <span className={`inline-flex items-center justify-center px-3 py-1 rounded-xl font-black text-sm shadow-2xs ${
+                                        s.score >= 70 ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'
+                                      }`}>
+                                        {s.score}
                                       </span>
-                                    ) : s.essayGraded ? (
-                                      <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-extrabold px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
-                                        <CheckCircle className="w-3 h-3 text-emerald-600" /> Sudah Dinilai (Leger Synced)
-                                      </span>
-                                    ) : (
-                                      <span className="text-[10px] bg-amber-50 text-amber-900 border border-amber-200 font-extrabold px-2.5 py-1 rounded-lg inline-flex items-center gap-1 animate-pulse">
-                                        <AlertCircle className="w-3 h-3 text-amber-600" /> Perlu Penilaian Uraian
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-3 text-center text-xs text-slate-500">
-                                    {new Date(s.submittedAt).toLocaleString('id-ID')}
-                                  </td>
-                                  <td className="px-4 py-3 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenEssayGradingModal(s)}
-                                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition shadow-2xs inline-flex items-center gap-1.5 cursor-pointer"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                      {hasEssayQuestions ? 'Koreksi & Beri Nilai Uraian' : 'Koreksi / Edit Nilai'}
-                                    </button>
-                                  </td>
-                                </tr>
-                              ));
+                                    </td>
+
+                                    {/* STATUS */}
+                                    <td className="px-3.5 py-3 text-center">
+                                      {!hasEssayQuestions ? (
+                                        <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-md">
+                                          Hanya Objektif
+                                        </span>
+                                      ) : s.essayGraded ? (
+                                        <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                                          <CheckCircle className="w-3 h-3 text-emerald-600" /> Leger Synced
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] bg-amber-50 text-amber-900 border border-amber-200 font-bold px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                                          <AlertCircle className="w-3 h-3 text-amber-600" /> Perlu Koreksi
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* DATE */}
+                                    <td className="px-3.5 py-3 text-center text-xs text-slate-500">
+                                      {new Date(s.submittedAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}
+                                    </td>
+
+                                    {/* ACTION */}
+                                    <td className="px-3.5 py-3 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEssayGradingModal(s)}
+                                        className={`px-3 py-1.5 font-bold text-xs rounded-xl transition shadow-2xs inline-flex items-center gap-1.5 cursor-pointer ${
+                                          hasEssayQuestions && !s.essayGraded
+                                            ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                                            : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                                        }`}
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                        {hasEssayQuestions ? 'Koreksi & Beri Nilai Uraian' : 'Koreksi / Edit Nilai'}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              });
                           })()}
                         </tbody>
                       </table>
@@ -8899,19 +9124,271 @@ export default function TeacherPanel({
 
               {/* Question Editor section */}
               <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
-                <div className="flex items-center gap-3 border-b border-slate-100 pb-4 mb-2">
-                  <Edit3 className="w-5 h-5 text-slate-400" />
-                  <h4 className="font-extrabold text-slate-900 text-sm tracking-wide uppercase">Editor Butir Soal</h4>
+                {/* Header with Badges & Action Buttons */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
+                      <Edit3 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-extrabold text-slate-900 text-base tracking-tight">Editor Butir Soal</h4>
+                        {editingQuestionIndex !== null ? (
+                          <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-300">
+                            Sedang Mengedit Soal #{editingQuestionIndex + 1}
+                          </span>
+                        ) : (
+                          <span className="bg-indigo-50 text-indigo-700 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-indigo-200">
+                            Butir Soal Baru
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Susun stimulus narasi, wacana literasi, formula matematika/IPA, tabel data, atau potongan koding secara visual.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Header Utility Buttons */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setShowMathSymbols(prev => !prev)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+                        showMathSymbols 
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' 
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      }`}
+                      title="Buka Palet Simbol Matematika, Sains, dan Satuan"
+                    >
+                      <Calculator className="w-3.5 h-3.5" />
+                      <span>Simbol Sains / Math</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsEditorExpanded(prev => !prev)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-2xs"
+                      title={isEditorExpanded ? "Kecilkan Editor" : "Perbesar ke Layar Penuh"}
+                    >
+                      {isEditorExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                      <span>{isEditorExpanded ? 'Kecilkan' : 'Layar Penuh'}</span>
+                    </button>
+                  </div>
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="md:col-span-2 space-y-2">
-                    <label className="block text-xs font-bold text-slate-700">Pertanyaan / Stimulus Utama *</label>
+
+                {/* Quick Math & Science Symbol Palette (Collapsible) */}
+                {showMathSymbols && (
+                  <div className="p-4 bg-indigo-50/70 rounded-2xl border border-indigo-100 space-y-3 animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Calculator className="w-4 h-4 text-indigo-600" />
+                        <span className="text-xs font-extrabold text-indigo-900 uppercase tracking-wide">
+                          Palet Simbol Cepat (Klik untuk menyisipkan ke dalam Soal)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowMathSymbols(false)}
+                        className="text-indigo-400 hover:text-indigo-700 text-xs font-bold"
+                      >
+                        Tutup ×
+                      </button>
+                    </div>
                     
-                    {/* Rich Formatting Toolbar (Google Forms style) */}
-                    <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-slate-100 rounded-lg border border-slate-200">
-                      {/* Font Preset Selector */}
-                      <div className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-slate-200 shadow-2xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Aritmatika & Aljabar</span>
+                        <div className="flex flex-wrap gap-1">
+                          {['±', '×', '÷', '≠', '≈', '≤', '≥', '√', 'π', '∞', '∑', '∫'].map(sym => (
+                            <button
+                              key={sym}
+                              type="button"
+                              onClick={() => handleInsertSymbol(sym)}
+                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200"
+                            >
+                              {sym}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Pangkat & Subskrip</span>
+                        <div className="flex flex-wrap gap-1">
+                          {['²', '³', '⁴', 'ⁿ', '₁', '₂', '₃', '₄', '₀'].map(sym => (
+                            <button
+                              key={sym}
+                              type="button"
+                              onClick={() => handleInsertSymbol(sym)}
+                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200"
+                            >
+                              {sym}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Satuan, Derajat & Sains</span>
+                        <div className="flex flex-wrap gap-1">
+                          {['°C', '°F', '°', 'Ω', 'µ', '%', '‰', 'Å', 'λ', 'ρ'].map(sym => (
+                            <button
+                              key={sym}
+                              type="button"
+                              onClick={() => handleInsertSymbol(sym)}
+                              className="px-2 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200"
+                            >
+                              {sym}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Panah & Reaksi Kimia</span>
+                        <div className="flex flex-wrap gap-1">
+                          {['→', '←', '↔', '⇒', '⇔', '⇌', '↑', '↓'].map(sym => (
+                            <button
+                              key={sym}
+                              type="button"
+                              onClick={() => handleInsertSymbol(sym)}
+                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200"
+                            >
+                              {sym}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Huruf Yunani (Fisika / Matematika)</span>
+                        <div className="flex flex-wrap gap-1">
+                          {['α', 'β', 'γ', 'θ', 'Δ', 'π', 'σ', 'ω', 'μ'].map(sym => (
+                            <button
+                              key={sym}
+                              type="button"
+                              onClick={() => handleInsertSymbol(sym)}
+                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200"
+                            >
+                              {sym}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Informatika & Logika Koding</span>
+                        <div className="flex flex-wrap gap-1">
+                          {['==', '!=', '<=', '>=', '&&', '||', '++', '--', '//'].map(sym => (
+                            <button
+                              key={sym}
+                              type="button"
+                              onClick={() => handleInsertSymbol(sym)}
+                              className="px-2 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-[11px] font-mono font-bold transition border border-slate-200"
+                            >
+                              {sym}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Question Settings Row: Kind & Score & Font */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="md:col-span-2 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                        Pertanyaan / Stimulus Utama *
+                      </label>
+
+                      {/* Mode Tabs: Visual WYSIWYG, Kode HTML, CBT Preview */}
+                      <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200 self-start sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => setQEditorTab('visual')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                            qEditorTab === 'visual'
+                              ? 'bg-white text-indigo-700 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Visual WYSIWYG</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setQEditorTab('code')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                            qEditorTab === 'code'
+                              ? 'bg-white text-indigo-700 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <Code className="w-3.5 h-3.5" />
+                          <span>Kode HTML</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setQEditorTab('preview')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                            qEditorTab === 'preview'
+                              ? 'bg-white text-indigo-700 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Pratinjau CBT</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quick Templates Bar & Font Selection */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200/80">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1 mr-1">
+                          <Sparkles className="w-3 h-3 text-amber-500" /> Template:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertTemplate('literasi')}
+                          className="px-2 py-0.5 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 border border-slate-200 rounded-md text-[10px] font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title="Sisipkan Template Wacana Literasi ANBK"
+                        >
+                          📖 Wacana Literasi
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertTemplate('koding')}
+                          className="px-2 py-0.5 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 rounded-md text-[10px] font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title="Sisipkan Template Potongan Kode Informatika"
+                        >
+                          💻 Koding Informatika
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertTemplate('tabel')}
+                          className="px-2 py-0.5 bg-white hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 border border-slate-200 rounded-md text-[10px] font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title="Sisipkan Tabel Data Komparasi"
+                        >
+                          📊 Tabel Data
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInsertTemplate('kasus')}
+                          className="px-2 py-0.5 bg-white hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 border border-slate-200 rounded-md text-[10px] font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title="Sisipkan Template Kasus Riil"
+                        >
+                          📌 Kasus Riil
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
                         <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Font:</span>
                         <select
                           value={qFontPreset}
@@ -8919,105 +9396,128 @@ export default function TeacherPanel({
                           className="text-[10px] font-bold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
                         >
                           <option value="Sans">Default Sans</option>
-                          <option value="Serif">Elegant Serif</option>
+                          <option value="Serif">Elegant Serif (Sastra)</option>
                           <option value="Grotesk">Modern Grotesk</option>
-                          <option value="Mono">Tech Monospace</option>
+                          <option value="Mono">Tech Monospace (Koding)</option>
                         </select>
                       </div>
-
-                      <div className="h-4 w-px bg-slate-300 mx-0.5"></div>
-
-                      {/* Formatting buttons */}
-                      <button
-                        type="button"
-                        onClick={() => insertTextAtCursor('**', '**')}
-                        title="Tebalkan Teks (Bold)"
-                        className="p-1 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 rounded transition font-black text-xs px-2 cursor-pointer border border-slate-200 bg-white"
-                      >
-                        B
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => insertTextAtCursor('*', '*')}
-                        title="Miringkan Teks (Italic)"
-                        className="p-1 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 rounded transition italic text-xs px-2.5 cursor-pointer border border-slate-200 bg-white"
-                      >
-                        I
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => insertTextAtCursor('__', '__')}
-                        title="Garis Bawah (Underline)"
-                        className="p-1 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 rounded transition underline text-xs px-2 cursor-pointer border border-slate-200 bg-white"
-                      >
-                        U
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => insertTextAtCursor('`', '`')}
-                        title="Teks Kode / Monospace"
-                        className="p-1 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 rounded transition font-mono text-xs px-1.5 cursor-pointer border border-slate-200 bg-white"
-                      >
-                        &lt;/&gt;
-                      </button>
-
-                      <div className="h-4 w-px bg-slate-300 mx-0.5"></div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const linkText = prompt("Masukkan Teks Tautan (Contoh: Buka Website Pembelajaran):", "Buka Website");
-                          if (linkText === null) return;
-                          const linkUrl = prompt("Masukkan URL / Tautan Tujuan (Contoh: https://...):", "https://");
-                          if (!linkUrl) return;
-                          setQText(prev => prev + ` [${linkText}](${linkUrl}) `);
-                        }}
-                        title="Sematkan Link / Tautan"
-                        className="p-1.5 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 rounded transition text-[10px] font-extrabold cursor-pointer border border-slate-200 bg-white flex items-center gap-1"
-                      >
-                        🔗 Link
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setQText(prev => prev + '\n- Item 1\n- Item 2')}
-                        title="Tambah Daftar Poin (List)"
-                        className="p-1.5 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 rounded transition text-[10px] font-extrabold cursor-pointer border border-slate-200 bg-white flex items-center gap-1"
-                      >
-                        • Daftar
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setQText(prev => prev + '\n\n[Paragraf Baru]\n')}
-                        title="Tambah Paragraf Baru"
-                        className="p-1.5 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 rounded transition text-[10px] font-extrabold cursor-pointer border border-slate-200 bg-white flex items-center gap-1"
-                      >
-                        ¶ Paragraf
-                      </button>
                     </div>
 
-                    <textarea
-                      rows={3}
-                      placeholder="Tulis stimulus teks, narasi, atau pertanyaan utama..."
-                      value={qText}
-                      onChange={(e) => setQText(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
-                    />
-
-                    {/* LIVE RENDER PREVIEW (NEW) */}
-                    {qText && (
-                      <div className="bg-white border border-slate-150 p-3 rounded-xl shadow-2xs">
-                        <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded tracking-wider uppercase">Live Preview Hasil Tampilan Soal:</span>
-                        <div className="mt-2 text-slate-900 leading-relaxed border-l-2 border-indigo-400 pl-2.5">
-                          {renderFormattedText(qText, qFontPreset)}
-                        </div>
+                    {/* MAIN EDITOR CONTENT BASED ON TAB */}
+                    {qEditorTab === 'visual' && (
+                      <div className="question-quill-editor rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-2xs">
+                        <ReactQuill
+                          theme="snow"
+                          value={qText}
+                          onChange={setQText}
+                          modules={{
+                            toolbar: [
+                              [{ 'header': [1, 2, 3, false] }],
+                              ['bold', 'italic', 'underline', 'strike'],
+                              [{ 'script': 'sub'}, { 'script': 'super' }],
+                              [{ 'color': [] }, { 'background': [] }],
+                              [{ 'align': [] }],
+                              [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'indent': '-1'}, { 'indent': '+1' }],
+                              ['blockquote', 'code-block'],
+                              ['link', 'image'],
+                              ['clean']
+                            ],
+                          }}
+                          formats={[
+                            'header',
+                            'bold', 'italic', 'underline', 'strike',
+                            'script',
+                            'color', 'background',
+                            'align',
+                            'list', 'indent',
+                            'blockquote', 'code-block',
+                            'link', 'image'
+                          ]}
+                          placeholder="Tulis stimulus teks, wacana literasi, narasi cerita, rumus matematika, atau pertanyaan utama butir soal di sini..."
+                        />
                       </div>
                     )}
+
+                    {qEditorTab === 'code' && (
+                      <div className="space-y-2">
+                        <textarea
+                          rows={8}
+                          placeholder="<p>Ketikkan kode HTML atau teks stimulus di sini...</p>"
+                          value={qText}
+                          onChange={(e) => setQText(e.target.value)}
+                          className="w-full px-3.5 py-2.5 font-mono text-xs border border-slate-300 bg-slate-900 text-emerald-400 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-hidden leading-relaxed"
+                        />
+                        <p className="text-[11px] text-slate-400">
+                          Anda sedang mengedit dalam mode kode HTML langsung. Anda dapat menempelkan sintaks HTML kustom dari dokumen eksternal.
+                        </p>
+                      </div>
+                    )}
+
+                    {qEditorTab === 'preview' && (
+                      <div className="bg-slate-50 border border-indigo-100 p-4 sm:p-5 rounded-2xl shadow-2xs space-y-4">
+                        <div className="flex items-center justify-between border-b border-indigo-100/80 pb-2.5">
+                          <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                            Simulasi Tampilan Butir Soal di Layar Ujian Siswa:
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-500">
+                            Preset Font: {qFontPreset}
+                          </span>
+                        </div>
+
+                        {/* Rendered Stimulus Box */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs leading-relaxed text-sm">
+                          {qText && qText.replace(/<[^>]*>/g, '').trim() !== '' ? (
+                            renderFormattedText(qText, qFontPreset)
+                          ) : (
+                            <span className="text-slate-400 italic text-xs">Belum ada konten stimulus yang dituliskan...</span>
+                          )}
+                        </div>
+
+                        {/* Media Preview if attached */}
+                        {qMediaType !== 'None' && qMediaUrl && (
+                          <div className="bg-white p-3 rounded-xl border border-slate-200 text-center">
+                            <span className="text-[10px] font-bold text-slate-400 block mb-1">Pratinjau Media Lampiran:</span>
+                            {qMediaType === 'Image' && (
+                              <img src={qMediaUrl} alt="Stimulus" className="max-h-48 mx-auto rounded-lg object-contain border" />
+                            )}
+                            {qMediaType === 'Video' && (
+                              <div className="text-xs text-indigo-600 font-mono">🎥 Media Video Tersemat: {qMediaUrl}</div>
+                            )}
+                            {qMediaType === 'Audio' && (
+                              <div className="text-xs text-indigo-600 font-mono">🔊 Media Audio Listening Tersemat: {qMediaUrl}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Word, Character and Statistics Footer */}
+                    <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 px-1 pt-1 border-t border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <span>Jumlah Kata: <strong className="text-slate-700 font-extrabold">{qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() ? qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().split(' ').length : 0}</strong></span>
+                        <span>•</span>
+                        <span>Karakter: <strong className="text-slate-700 font-extrabold">{qText.replace(/<[^>]*>/g, '').length}</strong></span>
+                        <span>•</span>
+                        <span>Estimasi Baca: <strong className="text-indigo-600 font-extrabold">~{Math.max(5, Math.ceil(((qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().split(' ').length || 1) / 180) * 60))} dtk</strong></span>
+                      </div>
+
+                      {qText && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm('Bersihkan isi pertanyaan / stimulus soal ini?')) {
+                              setQText('');
+                            }
+                          }}
+                          className="text-red-500 hover:text-red-700 hover:underline cursor-pointer flex items-center gap-1 font-semibold"
+                        >
+                          <RotateCcw className="w-3 h-3" /> Bersihkan Editor
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {/* RIGHT COLUMN: Question Type */}
                   <div>
                     <label className="block text-xs font-bold mb-1 text-slate-700">Jenis Soal *</label>
                     <select
@@ -9033,6 +9533,138 @@ export default function TeacherPanel({
                     </select>
                   </div>
                 </div>
+
+                {/* EXPANDED FULLSCREEN MODAL OVERLAY (FOR COMFORTABLE LONG STIMULUS WRITING) */}
+                {isEditorExpanded && (
+                  <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+                    <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
+                      {/* Modal Header */}
+                      <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
+                            <Maximize2 className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">
+                              Mode Fokus Layar Penuh - Editor Stimulus Soal
+                            </h3>
+                            <p className="text-[11px] text-slate-500">
+                              Tuliskan wacana literasi panjang, tabel eksperimen, atau studi kasus dengan area kerja leluasa.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsEditorExpanded(false)}
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Minimize2 className="w-4 h-4" />
+                          <span>Selesai / Kembali</span>
+                        </button>
+                      </div>
+
+                      {/* Modal Editor Area */}
+                      <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                        {/* Quick Templates inside Modal */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-100/70 rounded-xl border border-slate-200">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1 mr-1">
+                              <Sparkles className="w-3 h-3 text-amber-500" /> Template:
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleInsertTemplate('literasi')}
+                              className="px-2.5 py-1 bg-white hover:bg-amber-50 hover:text-amber-700 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 shadow-2xs"
+                            >
+                              📖 Wacana Literasi
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInsertTemplate('koding')}
+                              className="px-2.5 py-1 bg-white hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 shadow-2xs"
+                            >
+                              💻 Koding Informatika
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInsertTemplate('tabel')}
+                              className="px-2.5 py-1 bg-white hover:bg-blue-50 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 shadow-2xs"
+                            >
+                              📊 Tabel Data
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInsertTemplate('kasus')}
+                              className="px-2.5 py-1 bg-white hover:bg-purple-50 hover:text-purple-700 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 shadow-2xs"
+                            >
+                              📌 Kasus Riil
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowMathSymbols(prev => !prev)}
+                              className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-indigo-700 shadow-2xs flex items-center gap-1"
+                            >
+                              <Calculator className="w-3.5 h-3.5" />
+                              <span>{showMathSymbols ? 'Tutup Palet Simbol' : 'Buka Palet Simbol'}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Modal Quill */}
+                        <div className="question-quill-editor rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-2xs">
+                          <ReactQuill
+                            theme="snow"
+                            value={qText}
+                            onChange={setQText}
+                            modules={{
+                              toolbar: [
+                                [{ 'header': [1, 2, 3, false] }],
+                                ['bold', 'italic', 'underline', 'strike'],
+                                [{ 'script': 'sub'}, { 'script': 'super' }],
+                                [{ 'color': [] }, { 'background': [] }],
+                                [{ 'align': [] }],
+                                [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'indent': '-1'}, { 'indent': '+1' }],
+                                ['blockquote', 'code-block'],
+                                ['link', 'image'],
+                                ['clean']
+                              ],
+                            }}
+                            formats={[
+                              'header',
+                              'bold', 'italic', 'underline', 'strike',
+                              'script',
+                              'color', 'background',
+                              'align',
+                              'list', 'indent',
+                              'blockquote', 'code-block',
+                              'link', 'image'
+                            ]}
+                            className="min-h-[350px]"
+                            placeholder="Tulis stimulus teks secara lengkap di sini..."
+                          />
+                        </div>
+                      </div>
+
+                      {/* Modal Footer */}
+                      <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-xs text-slate-500">
+                          Jumlah Kata: <strong className="text-slate-800">{qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() ? qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().split(' ').length : 0}</strong> | Karakter: <strong className="text-slate-800">{qText.replace(/<[^>]*>/g, '').length}</strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditorExpanded(false)}
+                          className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                        >
+                          Simpan & Kembali ke Editor Soal
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* PILIHAN MEDIA & BOBOT SKOR (NEW) */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-3.5 bg-slate-100/50 rounded-xl border border-slate-200/50">
@@ -9258,6 +9890,50 @@ export default function TeacherPanel({
                   </div>
                 )}
 
+                {currentQType === 'Uraian' && (
+                  <div className="space-y-3 bg-white p-4 sm:p-5 rounded-2xl border border-indigo-100 shadow-2xs">
+                    <div className="flex items-center justify-between border-b border-indigo-100 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">
+                          ✍️
+                        </span>
+                        <h5 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                          Parameter Butir Soal Uraian (Esai)
+                        </h5>
+                      </div>
+                      <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-200">
+                        Koreksi & Skor Manual Guru
+                      </span>
+                    </div>
+
+                    <div className="bg-amber-50/80 border border-amber-200 p-3 rounded-xl text-xs text-amber-900 leading-relaxed flex items-start gap-2.5">
+                      <HelpCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <p className="font-extrabold">Mekanisme Penilaian Manual Uraian:</p>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">
+                          Ketika Anda membuat ujian kombinasi (misal 20 Pilihan Ganda & 5 Uraian), sistem CBT otomatis menilai seluruh soal pilihan ganda. Setelah siswa mengumpulkan, Anda dapat langsung memeriksa jawaban 5 soal uraian ini dan memberikan skor manual yang akan otomatis dijumlahkan dengan skor pilihan ganda ke dalam Leger Nilai.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span>💡 Rubrik / Kunci Jawaban Acuan Guru (Pedoman Penskoran):</span>
+                      </label>
+                      <textarea
+                        rows={3}
+                        placeholder="Tuliskan poin kunci atau rubrik penilaian ideal di sini (contoh: Menjelaskan 3 fungsi RAM dengan benar mendapat skor penuh 10 poin)..."
+                        value={uraianAnswer}
+                        onChange={(e) => setUraianAnswer(e.target.value)}
+                        className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                      />
+                      <span className="text-[10px] text-slate-400 block">
+                        * Rubrik ini hanya dilihat oleh Guru sebagai acuan saat proses koreksi manual dan tidak ditampilkan ke siswa saat mengerjakan ujian.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -9282,6 +9958,7 @@ export default function TeacherPanel({
                         setQMediaUrl('');
                         setQScore(10);
                         setQFontPreset('Sans');
+                        setUraianAnswer('');
                       }}
                       className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold px-4 py-2 rounded-lg cursor-pointer transition shadow-xs"
                     >
@@ -10994,11 +11671,114 @@ export default function TeacherPanel({
                 </div>
               </div>
 
+              {/* EXAM & SCORE OVERVIEW CARDS (BREAKDOWN PG & ESSAY) */}
+              {(() => {
+                const exam = teacherExams.find(e => e.id === selectedSubmissionForGrading.examId);
+                const essayQuestions = exam?.questions.filter(q => q.type === 'Uraian') || [];
+                const pgQuestions = exam?.questions.filter(q => q.type !== 'Uraian') || [];
+
+                let pgEarned = 0;
+                let pgMax = 0;
+                let pgCorrectCount = 0;
+                pgQuestions.forEach(q => {
+                  const qWeight = Number(q.score) || 1;
+                  pgMax += qWeight;
+                  const ans = (selectedSubmissionForGrading.answers || []).find(a => a.questionId === q.id);
+                  if (ans?.isCorrect) {
+                    pgCorrectCount++;
+                    pgEarned += qWeight;
+                  } else if (ans?.pointsEarned) {
+                    pgEarned += ans.pointsEarned;
+                  }
+                });
+                const pgPct = pgMax > 0 ? Math.round((pgEarned / pgMax) * 100) : 0;
+
+                let essayEarned = 0;
+                let essayMax = 0;
+                essayQuestions.forEach(q => {
+                  const qWeight = Number(q.score) || 10;
+                  essayMax += qWeight;
+                  essayEarned += Number(essayScoresState[q.id]) || 0;
+                });
+                const essayPct = essayMax > 0 ? Math.round((essayEarned / essayMax) * 100) : 0;
+
+                // Compute live final score
+                let liveScore = 0;
+                if (gradingMethod === 'TOTAL_LANGSUNG') {
+                  liveScore = Number(directTotalScoreState) || 0;
+                } else if (essayGradingScheme === 'DIRECT_SUM') {
+                  liveScore = Math.min(100, Math.round(pgEarned + essayEarned));
+                } else if (essayGradingScheme === 'PERCENTAGE') {
+                  const wPg = (Number(pgWeightPercent) || 70) / 100;
+                  const wEssay = (Number(essayWeightPercent) || 30) / 100;
+                  liveScore = Math.round((pgPct * wPg) + (essayPct * wEssay));
+                } else {
+                  // Proportional: (pgEarned + essayEarned) / (pgMax + essayMax) * 100
+                  const totalMax = pgMax + essayMax;
+                  liveScore = totalMax > 0 ? Math.round(((pgEarned + essayEarned) / totalMax) * 100) : 0;
+                }
+                liveScore = Math.max(0, Math.min(100, liveScore));
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* CARD 1: PG */}
+                    <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-3.5 space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700">1. Skor PG (Otomatis)</span>
+                        <span className="text-[9px] bg-indigo-100 text-indigo-800 font-extrabold px-1.5 py-0.5 rounded">CBT Auto</span>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-black text-indigo-950 font-mono">{pgEarned} <span className="text-xs text-indigo-600 font-bold">/ {pgMax} Poin</span></span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 font-medium flex items-center justify-between pt-1 border-t border-indigo-100">
+                        <span>{pgCorrectCount} dari {pgQuestions.length} Soal Benar</span>
+                        <span className="font-extrabold text-indigo-700">{pgPct}%</span>
+                      </div>
+                    </div>
+
+                    {/* CARD 2: ESSAY */}
+                    <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-3.5 space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-900">2. Skor {essayQuestions.length} Uraian (Manual)</span>
+                        <span className="text-[9px] bg-amber-100 text-amber-800 font-extrabold px-1.5 py-0.5 rounded">Guru</span>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-black text-amber-950 font-mono">{essayEarned} <span className="text-xs text-amber-700 font-bold">/ {essayMax} Poin</span></span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 font-medium flex items-center justify-between pt-1 border-t border-amber-200/60">
+                        <span>{essayQuestions.length} Butir Soal Esai</span>
+                        <span className="font-extrabold text-amber-800">{essayPct}%</span>
+                      </div>
+                    </div>
+
+                    {/* CARD 3: TOTAL */}
+                    <div className="bg-emerald-50/80 border border-emerald-300 rounded-2xl p-3.5 space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-900">3. Total Nilai Akhir</span>
+                        <span className="text-[9px] bg-emerald-200 text-emerald-900 font-extrabold px-1.5 py-0.5 rounded">Leger</span>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-black text-emerald-950 font-mono">{liveScore}</span>
+                        <span className="text-xs text-emerald-700 font-bold">/ 100</span>
+                      </div>
+                      <div className="text-[11px] text-emerald-800 font-medium pt-1 border-t border-emerald-200 flex items-center justify-between">
+                        <span>Hasil Penjumlahan</span>
+                        <span className="font-extrabold font-mono">{liveScore >= 70 ? 'TUNTAS' : 'REMEDIAL'}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* METHOD SELECTION TABS */}
-              <div className="space-y-2">
-                <label className="block text-xs font-black text-slate-800 uppercase tracking-wide">
-                  Metode Penilaian Uraian Guru:
-                </label>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-black text-slate-800 uppercase tracking-wide">
+                    Metode & Skema Penilaian:
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-medium">Nilai PG + Nilai Uraian dihitung otomatis</span>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -11015,8 +11795,8 @@ export default function TeacherPanel({
                       1
                     </div>
                     <div>
-                      <div className="font-extrabold text-xs sm:text-sm">Nilai Per Soal Uraian (Rekomendasi)</div>
-                      <div className="text-[10px] text-slate-500 font-normal">Periksa tiap jawaban uraian siswa & beri skor per butir</div>
+                      <div className="font-extrabold text-xs sm:text-sm">Nilai Per Butir Soal Uraian (Rekomendasi)</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Periksa jawaban siswa & beri skor pada masing-masing butir esai</div>
                     </div>
                   </button>
 
@@ -11035,11 +11815,105 @@ export default function TeacherPanel({
                       2
                     </div>
                     <div>
-                      <div className="font-extrabold text-xs sm:text-sm">Input Langsung Total Nilai Akhir</div>
-                      <div className="text-[10px] text-slate-500 font-normal">Masukkan nilai total akhir (0-100) secara langsung</div>
+                      <div className="font-extrabold text-xs sm:text-sm">Input Langsung Total Nilai Akhir (Manual)</div>
+                      <div className="text-[10px] text-slate-500 font-normal">Ketikkan angka total akhir (0-100) secara langsung tanpa koreksi per butir</div>
                     </div>
                   </button>
                 </div>
+
+                {/* SCHEME SELECTOR FOR PER_SOAL */}
+                {gradingMethod === 'PER_SOAL' && (
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-black text-slate-900 block">Skema Penjumlahan Skor PG & Soal Uraian:</span>
+                        <span className="text-[10px] text-slate-500">Pilih rumus penjumlahan nilai objektif pilihan ganda dan nilai esai</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setEssayGradingScheme('PROPORTIONAL')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            essayGradingScheme === 'PROPORTIONAL'
+                              ? 'bg-indigo-600 text-white shadow-2xs'
+                              : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
+                          }`}
+                          title="Total Poin (PG + Esai) ÷ Maksimal Poin × 100"
+                        >
+                          Bobot Proporsional (Standar)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEssayGradingScheme('DIRECT_SUM')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            essayGradingScheme === 'DIRECT_SUM'
+                              ? 'bg-indigo-600 text-white shadow-2xs'
+                              : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
+                          }`}
+                          title="Penjumlahan Langsung Poin: Poin PG + Poin Uraian"
+                        >
+                          Penjumlahan Langsung
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEssayGradingScheme('PERCENTAGE')}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            essayGradingScheme === 'PERCENTAGE'
+                              ? 'bg-indigo-600 text-white shadow-2xs'
+                              : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200'
+                          }`}
+                          title="Bobot Persentase: % PG + % Uraian"
+                        >
+                          Bobot Persentase (%)
+                        </button>
+                      </div>
+                    </div>
+
+                    {essayGradingScheme === 'PERCENTAGE' && (
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-200 text-xs flex-wrap">
+                        <span className="font-extrabold text-slate-700 text-[11px]">Rasio Bobot:</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => { setPgWeightPercent(70); setEssayWeightPercent(30); }}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold cursor-pointer transition ${
+                              pgWeightPercent === 70 && essayWeightPercent === 30 ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-700'
+                            }`}
+                          >
+                            70% PG : 30% Uraian
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setPgWeightPercent(60); setEssayWeightPercent(40); }}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold cursor-pointer transition ${
+                              pgWeightPercent === 60 && essayWeightPercent === 40 ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-700'
+                            }`}
+                          >
+                            60% PG : 40% Uraian
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setPgWeightPercent(50); setEssayWeightPercent(50); }}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold cursor-pointer transition ${
+                              pgWeightPercent === 50 && essayWeightPercent === 50 ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-700'
+                            }`}
+                          >
+                            50% PG : 50% Uraian
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setPgWeightPercent(80); setEssayWeightPercent(20); }}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold cursor-pointer transition ${
+                              pgWeightPercent === 80 && essayWeightPercent === 20 ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-700'
+                            }`}
+                          >
+                            80% PG : 20% Uraian
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* METHOD 1: PER SOAL URAIAN LIST */}
@@ -11053,10 +11927,10 @@ export default function TeacherPanel({
                   return (
                     <div className="p-5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-2">
                       <p className="font-extrabold flex items-center gap-1.5">
-                        <Info className="w-4 h-4 text-amber-600" /> Ujian ini tidak memiliki soal berjenis Uraian (Essay).
+                        <Info className="w-4 h-4 text-amber-600" /> Ujian ini tidak memiliki butir soal berjenis Uraian (Essay).
                       </p>
                       <p className="text-slate-600">
-                        Seluruh soal pada ujian ini adalah tipe pilihan objektif yang telah dinilai otomatis. Anda dapat menggunakan metode "Input Langsung Total Nilai Akhir" jika ingin menyesuaikan total nilai siswa.
+                        Seluruh soal pada paket ujian ini adalah tipe pilihan objektif yang telah dinilai otomatis. Anda dapat menggunakan metode "Input Langsung Total Nilai Akhir" jika ingin menyesuaikan total nilai akhir siswa.
                       </p>
                     </div>
                   );
@@ -11066,16 +11940,16 @@ export default function TeacherPanel({
                   <div className="space-y-6">
                     <div className="border-b border-slate-200 pb-2 flex items-center justify-between">
                       <h4 className="font-black text-slate-900 text-xs uppercase tracking-wide flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-indigo-600" /> DAFTAR SOAL URAIAN SISWA ({essayQuestions.length} Soal)
+                        <FileText className="w-4 h-4 text-indigo-600" /> DAFTAR SOAL URAIAN SISWA ({essayQuestions.length} Butir Soal)
                       </h4>
-                      <span className="text-[10px] text-slate-500 font-medium">Beri nilai pada masing-masing soal di bawah ini</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Beri skor manual pada tiap jawaban siswa di bawah</span>
                     </div>
 
                     <div className="space-y-6">
                       {essayQuestions.map((q, idx) => {
                         const studentAnsObj = selectedSubmissionForGrading.answers.find(a => a.questionId === q.id);
                         const studentAnswerText = studentAnsObj?.studentAnswer;
-                        const maxScore = q.score || 10;
+                        const maxScore = Number(q.score) || 10;
                         const currentScoreVal = essayScoresState[q.id] ?? 0;
 
                         return (
@@ -11087,12 +11961,12 @@ export default function TeacherPanel({
                                 </span>
                                 <div>
                                   <span className="text-[10px] font-extrabold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100">
-                                    Soal Uraian / Essay
+                                    Soal Uraian / Essay #{idx + 1}
                                   </span>
                                 </div>
                               </div>
                               <span className="text-xs bg-emerald-50 text-emerald-800 font-extrabold px-2.5 py-1 rounded-lg border border-emerald-200">
-                                Maksimal Skor: {maxScore} Poin
+                                Bobot Maksimal: {maxScore} Poin
                               </span>
                             </div>
 
@@ -11107,7 +11981,7 @@ export default function TeacherPanel({
                                 <span className="font-extrabold text-emerald-900 block text-[11px] uppercase tracking-wide">
                                   💡 Kunci / Rubrik Jawaban Ideal Guru:
                                 </span>
-                                <p className="text-slate-800 font-medium leading-relaxed">
+                                <p className="text-slate-800 font-medium leading-relaxed whitespace-pre-wrap">
                                   {q.correctAnswer}
                                 </p>
                               </div>
@@ -11118,11 +11992,11 @@ export default function TeacherPanel({
                               <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider">
                                 💬 Jawaban Siswa ({selectedSubmissionForGrading.studentName}):
                               </label>
-                              <div className="bg-indigo-50/40 border border-indigo-100 p-3.5 rounded-xl text-xs sm:text-sm font-medium text-slate-900 leading-relaxed min-h-[60px] whitespace-pre-wrap">
+                              <div className="bg-indigo-50/40 border border-indigo-100 p-3.5 rounded-xl text-xs sm:text-sm font-medium text-slate-900 leading-relaxed min-h-[60px] whitespace-pre-wrap shadow-inner">
                                 {studentAnswerText && String(studentAnswerText).trim() !== '' ? (
                                   <span>{String(studentAnswerText)}</span>
                                 ) : (
-                                  <span className="text-amber-700 italic font-medium">Siswa tidak memberikan jawaban pada soal uraian ini.</span>
+                                  <span className="text-amber-700 italic font-medium">Siswa tidak memberikan jawaban pada butir soal uraian ini.</span>
                                 )}
                               </div>
                             </div>
@@ -11132,9 +12006,9 @@ export default function TeacherPanel({
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <div>
                                   <label className="block text-xs font-black text-slate-900">
-                                    Input Nilai Skor Guru (0 - {maxScore}):
+                                    Input Skor Manual Guru (0 - {maxScore}):
                                   </label>
-                                  <span className="text-[10px] text-slate-500 font-normal">Ketikkan angka nilai atau pilih preset di samping</span>
+                                  <span className="text-[10px] text-slate-500 font-normal">Ketik angka nilai atau klik preset persentase di bawah</span>
                                 </div>
 
                                 <div className="flex items-center gap-2">
@@ -11155,28 +12029,42 @@ export default function TeacherPanel({
                               </div>
 
                               {/* QUICK PRESET BUTTONS */}
-                              <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
-                                <span className="text-[10px] font-bold text-slate-500">Preset Cepat:</span>
+                              <div className="flex items-center gap-1.5 pt-1 border-t border-slate-200/60 flex-wrap">
+                                <span className="text-[10px] font-bold text-slate-500 mr-1">Preset Cepat:</span>
                                 <button
                                   type="button"
                                   onClick={() => setEssayScoresState(prev => ({ ...prev, [q.id]: 0 }))}
                                   className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 text-[10px] font-extrabold rounded-lg transition cursor-pointer"
                                 >
-                                  0% (Salah / 0)
+                                  0% (0)
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setEssayScoresState(prev => ({ ...prev, [q.id]: Math.round(maxScore * 0.5) }))}
+                                  onClick={() => setEssayScoresState(prev => ({ ...prev, [q.id]: Math.round(maxScore * 0.25 * 10) / 10 }))}
+                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-extrabold rounded-lg transition cursor-pointer"
+                                >
+                                  25% ({Math.round(maxScore * 0.25 * 10) / 10})
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEssayScoresState(prev => ({ ...prev, [q.id]: Math.round(maxScore * 0.5 * 10) / 10 }))}
                                   className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-extrabold rounded-lg transition cursor-pointer"
                                 >
-                                  50% (Sebagian / {Math.round(maxScore * 0.5)})
+                                  50% ({Math.round(maxScore * 0.5 * 10) / 10})
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEssayScoresState(prev => ({ ...prev, [q.id]: Math.round(maxScore * 0.75 * 10) / 10 }))}
+                                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold rounded-lg transition cursor-pointer"
+                                >
+                                  75% ({Math.round(maxScore * 0.75 * 10) / 10})
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setEssayScoresState(prev => ({ ...prev, [q.id]: maxScore }))}
                                   className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 text-[10px] font-extrabold rounded-lg transition cursor-pointer"
                                 >
-                                  100% (Sempurna / {maxScore})
+                                  100% ({maxScore})
                                 </button>
                               </div>
 
@@ -11184,7 +12072,7 @@ export default function TeacherPanel({
                               <div className="pt-2">
                                 <input
                                   type="text"
-                                  placeholder="Catatan / Feedback guru untuk soal ini (opsional)..."
+                                  placeholder="Catatan / Feedback guru untuk butir uraian ini (opsional)..."
                                   value={essayNotesState[q.id] || ''}
                                   onChange={(e) => setEssayNotesState(prev => ({ ...prev, [q.id]: e.target.value }))}
                                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium text-slate-800 bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
@@ -11246,43 +12134,94 @@ export default function TeacherPanel({
               </div>
 
               {/* LIVE CALCULATED SCORE SUMMARY BAR */}
-              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg border border-slate-800">
-                <div className="text-center sm:text-left">
-                  <span className="text-[10px] text-indigo-300 font-black tracking-widest uppercase block">HASIL PENILAIAN AKHIR</span>
-                  <p className="text-xs text-slate-300 font-medium">Nilai ini akan langsung memperbarui & tersimpan di Leger Nilai</p>
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg border border-slate-800">
+                <div className="text-center md:text-left space-y-1">
+                  <span className="text-[10px] text-indigo-300 font-black tracking-widest uppercase block">HASIL PENILAIAN AKHIR & PENJUMALAHAN SKOR</span>
+                  <p className="text-xs text-slate-300 font-medium">
+                    {(() => {
+                      const exam = teacherExams.find(e => e.id === selectedSubmissionForGrading.examId);
+                      const essayQuestions = exam?.questions.filter(q => q.type === 'Uraian') || [];
+                      const pgQuestions = exam?.questions.filter(q => q.type !== 'Uraian') || [];
+
+                      let pgEarned = 0;
+                      let pgMax = 0;
+                      pgQuestions.forEach(q => {
+                        const qWeight = Number(q.score) || 1;
+                        pgMax += qWeight;
+                        const ans = (selectedSubmissionForGrading.answers || []).find(a => a.questionId === q.id);
+                        if (ans?.isCorrect) pgEarned += qWeight;
+                        else if (ans?.pointsEarned) pgEarned += ans.pointsEarned;
+                      });
+
+                      let essayEarned = 0;
+                      let essayMax = 0;
+                      essayQuestions.forEach(q => {
+                        const qWeight = Number(q.score) || 10;
+                        essayMax += qWeight;
+                        essayEarned += Number(essayScoresState[q.id]) || 0;
+                      });
+
+                      if (gradingMethod === 'TOTAL_LANGSUNG') {
+                        return `Input Langsung: ${directTotalScoreState} / 100`;
+                      } else if (essayGradingScheme === 'DIRECT_SUM') {
+                        return `Penjumlahan Poin: PG (${pgEarned}) + Esai (${essayEarned}) = ${pgEarned + essayEarned}`;
+                      } else if (essayGradingScheme === 'PERCENTAGE') {
+                        const pgPct = pgMax > 0 ? Math.round((pgEarned / pgMax) * 100) : 0;
+                        const essayPct = essayMax > 0 ? Math.round((essayEarned / essayMax) * 100) : 0;
+                        return `Bobot %: PG ${pgPct}% (${pgWeightPercent}%) + Esai ${essayPct}% (${essayWeightPercent}%)`;
+                      } else {
+                        return `Proporsional: Poin PG (${pgEarned}/${pgMax}) + Esai (${essayEarned}/${essayMax}) ➔ Total`;
+                      }
+                    })()}
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-slate-400 font-bold uppercase">Nilai Leger:</span>
-                  <span className="text-2xl sm:text-3xl font-black font-mono text-emerald-400 bg-slate-800/80 px-4 py-1.5 rounded-xl border border-emerald-500/30">
+                  <span className="text-3xl sm:text-4xl font-black font-mono text-emerald-400 bg-slate-800/90 px-5 py-1.5 rounded-xl border border-emerald-500/40 shadow-inner">
                     {gradingMethod === 'TOTAL_LANGSUNG' 
                       ? (directTotalScoreState || 0)
                       : (() => {
                           const exam = teacherExams.find(e => e.id === selectedSubmissionForGrading.examId);
                           if (!exam) return selectedSubmissionForGrading.score;
 
-                          let totalEarned = 0;
-                          let totalMaxPoints = 0;
+                          let pgEarned = 0;
+                          let pgMax = 0;
+                          let essayEarned = 0;
+                          let essayMax = 0;
 
                           exam.questions.forEach(q => {
-                            const qWeight = q.score || 1;
-                            totalMaxPoints += qWeight;
-
+                            const qWeight = Number(q.score) || 1;
                             const studentAns = selectedSubmissionForGrading.answers.find(a => a.questionId === q.id);
 
                             if (q.type === 'Uraian') {
-                              totalEarned += Number(essayScoresState[q.id]) || 0;
+                              essayMax += qWeight;
+                              essayEarned += Number(essayScoresState[q.id]) || 0;
                             } else {
+                              pgMax += qWeight;
                               if (studentAns?.isCorrect) {
-                                totalEarned += qWeight;
+                                pgEarned += qWeight;
                               } else if (studentAns?.pointsEarned) {
-                                totalEarned += studentAns.pointsEarned;
+                                pgEarned += studentAns.pointsEarned;
                               }
                             }
                           });
 
-                          const calc = totalMaxPoints > 0 ? Math.round((totalEarned / totalMaxPoints) * 100) : selectedSubmissionForGrading.score;
-                          return Math.max(0, Math.min(100, calc));
+                          let finalCalc = 0;
+                          if (essayGradingScheme === 'DIRECT_SUM') {
+                            finalCalc = Math.round(pgEarned + essayEarned);
+                          } else if (essayGradingScheme === 'PERCENTAGE') {
+                            const pgPct = pgMax > 0 ? (pgEarned / pgMax) * 100 : 0;
+                            const essayPct = essayMax > 0 ? (essayEarned / essayMax) * 100 : 0;
+                            const wPg = (Number(pgWeightPercent) || 70) / 100;
+                            const wEssay = (Number(essayWeightPercent) || 30) / 100;
+                            finalCalc = Math.round((pgPct * wPg) + (essayPct * wEssay));
+                          } else {
+                            const totalMaxPoints = pgMax + essayMax;
+                            const totalEarned = pgEarned + essayEarned;
+                            finalCalc = totalMaxPoints > 0 ? Math.round((totalEarned / totalMaxPoints) * 100) : selectedSubmissionForGrading.score;
+                          }
+                          return Math.max(0, Math.min(100, finalCalc));
                         })()
                     }
                   </span>

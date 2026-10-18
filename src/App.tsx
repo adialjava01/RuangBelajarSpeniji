@@ -47,20 +47,23 @@ const SEED_CLASSES: ClassItem[] = [
 ];
 
 const SEED_SUBJECTS: SubjectItem[] = [
-  { id: 'subj-1', name: 'Matematika' },
+  { id: 'subj-1', name: 'Informatika' },
   { id: 'subj-2', name: 'IPA (Sains)' },
   { id: 'subj-3', name: 'Bahasa Indonesia' },
-  { id: 'subj-4', name: 'Bahasa Inggris' }
+  { id: 'subj-4', name: 'Bahasa Inggris' },
+  { id: 'subj-5', name: 'Matematika' }
 ];
 
 const SEED_TEACHERS: Teacher[] = [
   { 
     id: 't-1', 
-    name: 'Drs. Bambang Wijaya, M.Pd.', 
-    nip: '198503122011011002', 
-    email: 'bambang.wijaya@smp.sch.id', 
-    subject: 'Matematika', 
-    photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop' 
+    name: 'Adi Candra Wirawan, S.Kom.', 
+    nip: '198211212024211006', 
+    email: 'adi.candra@smp.sch.id', 
+    subject: 'Informatika', 
+    photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop',
+    password: 'guru123',
+    isAdmin: true
   },
   { 
     id: 't-2', 
@@ -95,11 +98,11 @@ const SEED_STUDENTS: Student[] = [
 const SEED_MATERIALS: Material[] = [
   {
     id: 'm-1',
-    title: 'Sistem Aljabar Linier Dua Variabel - Pertemuan 1',
+    title: 'Pengenalan Perangkat Keras dan Jaringan Komputer - Pertemuan 1',
     classId: 'class-1',
     subjectId: 'subj-1',
     fileType: 'PDF',
-    fileUrl: 'https://drive.google.com/file/d/simulated_aljabar_pdf/view',
+    fileUrl: 'https://drive.google.com/file/d/simulated_informatika_pdf/view',
     status: 'Aktif',
     teacherId: 't-1',
     createdAt: new Date().toISOString()
@@ -120,49 +123,49 @@ const SEED_MATERIALS: Material[] = [
 const SEED_EXAMS: Exam[] = [
   {
     id: 'ex-1',
-    title: 'Ujian Simulasi ANBK - Evaluasi Aljabar VII-A',
+    title: 'Ujian Evaluasi Informatika & Literasi Digital - VII-A',
     classId: 'class-1',
     subjectId: 'subj-1',
-    token: 'ALJB7',
+    token: 'INFO7',
     durationMinutes: 20,
     createdAt: new Date().toISOString(),
     teacherId: 't-1',
     questions: [
       {
         id: 'q-1',
-        questionText: 'Jika nilai x + 3 = 10, tentukan nilai dari 2x - 5.',
+        questionText: 'Komponen perangkat keras yang berfungsi sebagai otak utama pemroses data dalam sistem komputer adalah...',
         type: 'PilihanGanda',
-        options: ['5', '7', '9', '12'],
-        correctAnswer: 'C' // '9'
+        options: ['Hard Disk Drive (HDD)', 'Random Access Memory (RAM)', 'Central Processing Unit (CPU)', 'Power Supply Unit (PSU)'],
+        correctAnswer: 'C'
       },
       {
         id: 'q-2',
-        questionText: 'Manakah dari bangun datar berikut yang memiliki tepat 4 sumbu simetri?',
+        questionText: 'Manakah dari perangkat berikut yang termasuk dalam kategori perangkat masukan (input device)?',
         type: 'PilihanGandaKompleks',
-        options: ['Persegi Panjang', 'Persegi', 'Belah Ketupat', 'Segitiga Sama Sisi'],
-        correctAnswers: ['Persegi']
+        options: ['Keyboard', 'Monitor', 'Mouse', 'Speaker'],
+        correctAnswers: ['Keyboard', 'Mouse']
       },
       {
         id: 'q-3',
-        questionText: 'Perhatikan pernyataan relasi matematika di bawah ini:\n(1) Hasil dari 2 x 5 adalah 10\n(2) Bilangan 7 adalah bilangan genap\n(3) Sudut siku-siku besarnya 90 derajat\n(4) Ibu kota negara Indonesia adalah Surabaya\n\nManakah pernyataan yang benar?',
+        questionText: 'Perhatikan pernyataan tentang jaringan komputer & internet berikut:\n(1) Local Area Network (LAN) menghubungkan komputer di lingkungan terbatas seperti Lab Sekolah\n(2) RAM berfungsi menyimpan file data secara permanen saat komputer mati\n(3) IP Address merupakan alamat unik untuk mengidentifikasi perangkat di jaringan\n(4) Browser adalah salah satu jenis perangkat keras komputer\n\nManakah pernyataan yang benar?',
         type: 'PilihanAsosiatif',
         statements: [
-          '(1) Hasil dari 2 x 5 adalah 10',
-          '(2) Bilangan 7 adalah bilangan genap',
-          '(3) Sudut siku-siku besarnya 90 derajat',
-          '(4) Ibu kota negara Indonesia adalah Surabaya'
+          '(1) Local Area Network (LAN) menghubungkan komputer di lingkungan terbatas seperti Lab Sekolah',
+          '(2) RAM berfungsi menyimpan file data secara permanen saat komputer mati',
+          '(3) IP Address merupakan alamat unik untuk mengidentifikasi perangkat di jaringan',
+          '(4) Browser adalah salah satu jenis perangkat keras komputer'
         ],
-        correctCombination: [1, 3] // -> B (karena 1 dan 3 benar)
+        correctCombination: [1, 3]
       },
       {
         id: 'q-4',
-        questionText: 'Matahari terbit di sebelah timur.\nSEBAB\nBumi berotasi mengelilingi porosnya dari arah barat ke timur.',
+        questionText: 'Penerapan kata sandi yang kuat dan autentikasi multi-faktor sangat penting dalam perlindungan identitas digital.\nSEBAB\nKata sandi yang mudah ditebak sangat berisiko terhadap serangan brute force dan pembobolan akun.',
         type: 'SebabAkibat',
-        statement: 'Matahari terbit di sebelah timur.',
-        reason: 'Bumi berotasi mengelilingi porosnya dari arah barat ke timur.',
+        statement: 'Penerapan kata sandi yang kuat dan autentikasi multi-faktor sangat penting dalam perlindungan identitas digital.',
+        reason: 'Kata sandi yang mudah ditebak sangat berisiko terhadap serangan brute force dan pembobolan akun.',
         correctStatementTrue: true,
         correctReasonTrue: true,
-        correctCausality: true // -> A (pernyataan benar, alasan benar, dan berhubungan kausalitas)
+        correctCausality: true
       }
     ]
   }
@@ -175,9 +178,9 @@ const SEED_JOURNALS: JournalEntry[] = [
     classId: 'class-1',
     subjectId: 'subj-1',
     teacherId: 't-1',
-    topic: 'Aljabar Linier Dasar & Penjumlahan Variabel',
-    learningObjectives: 'Siswa dapat memahami konsep penjumlahan variabel aljabar dan mengaplikasikannya dalam penyelesaian persamaan linier sederhana.',
-    notes: 'Siswa sangat aktif bertanya. Aditya Pratama perlu bimbingan khusus pada soal pecahan aljabar.',
+    topic: 'Pengenalan Algoritma dan Berpikir Komputasional',
+    learningObjectives: 'Siswa dapat memahami konsep berpikir komputasional dan dekomposisi masalah dalam algoritma sederhana.',
+    notes: 'Siswa sangat aktif berdiskusi dan antusias dalam mempraktikkan diagram alir (flowchart).',
     startPeriod: 2,
     endPeriod: 4,
     attendance: [
@@ -192,9 +195,9 @@ const SEED_JOURNALS: JournalEntry[] = [
     classId: 'class-1',
     subjectId: 'subj-1',
     teacherId: 't-1',
-    topic: 'Pengenalan Sistem Persamaan Linier Dua Variabel (SPLDV)',
-    learningObjectives: 'Siswa mampu mengidentifikasi komponen variabel dan konstanta dalam SPLDV.',
-    notes: 'Pembelajaran berjalan kondusif dengan metode diskusi kelompok.',
+    topic: 'Jaringan Komputer Lokal (LAN) dan Penggunaan Internet Sehat',
+    learningObjectives: 'Siswa mampu mengidentifikasi topologi jaringan serta menerapkan etika berinternet secara aman.',
+    notes: 'Praktik koneksi jaringan lokal berjalan tertib dan kondusif.',
     startPeriod: 5,
     endPeriod: 6,
     attendance: [
@@ -209,11 +212,11 @@ const SEED_ANNOUNCEMENTS: TeacherAnnouncement[] = [
   {
     id: 'ann-1',
     teacherId: 't-1',
-    teacherName: 'Drs. Bambang Wijaya, M.Pd.',
-    teacherSubject: 'Matematika',
+    teacherName: 'Adi Candra Wirawan, S.Kom.',
+    teacherSubject: 'Informatika',
     targetType: 'all',
-    title: '📢 Persiapan Ulangan Harian Aljabar & Persamaan Linier',
-    content: 'Selamat datang siswa/i semua! Dimohon kepada seluruh siswa untuk mempelajari kembali latihan soal pada e-book materi Matematika di menu E-Learning. Ulangan harian akan dilaksanakan minggu depan via CBT secara online!',
+    title: '📢 Persiapan Praktik Komputer & Evaluasi Materi Informatika',
+    content: 'Selamat datang siswa/i semua! Dimohon kepada seluruh siswa untuk mempelajari kembali materi Informatika di menu E-Learning. Evaluasi harian akan dilaksanakan via CBT online!',
     priority: 'penting',
     createdAt: new Date().toISOString(),
     isActive: true
@@ -221,12 +224,12 @@ const SEED_ANNOUNCEMENTS: TeacherAnnouncement[] = [
   {
     id: 'ann-2',
     teacherId: 't-1',
-    teacherName: 'Drs. Bambang Wijaya, M.Pd.',
-    teacherSubject: 'Matematika',
+    teacherName: 'Adi Candra Wirawan, S.Kom.',
+    teacherSubject: 'Informatika',
     targetType: 'class',
     targetClassName: 'VII-A',
-    title: '💡 Tugas Kelompok Latihan Soal SPLDV Kelas VII-A',
-    content: 'Khusus siswa kelas VII-A, harap mengumpulkan lembar diskusi kelompok sebelum jam pelajaran ke-5 selesai. Bagi yang mengalami kendala dapat bertanya langsung melalui panel kelas.',
+    title: '💡 Tugas Kelompok Algoritma Pemrograman Kelas VII-A',
+    content: 'Khusus siswa kelas VII-A, harap menyelesaikan lembar kerja studi kasus algoritma sebelum jam pelajaran berakhir. Bagi yang mengalami kendala dapat bertanya langsung melalui panel kelas.',
     priority: 'normal',
     createdAt: new Date(Date.now() - 3600000).toISOString(),
     isActive: true
@@ -414,6 +417,58 @@ export default function App() {
       unsubSchoolConfig();
     };
   }, []);
+
+  // Auto-migration & Database consistency for Adi Candra Wirawan, S.Kom. (NIP 198211212024211006 - Informatika)
+  useEffect(() => {
+    if (teachers && teachers.length > 0) {
+      const bambangTeacher = teachers.find(t => 
+        (t.name && t.name.toLowerCase().includes('bambang')) || 
+        t.nip === '198503122011011002'
+      );
+      if (bambangTeacher) {
+        updateDocument('teachers', {
+          id: bambangTeacher.id,
+          name: 'Adi Candra Wirawan, S.Kom.',
+          nip: '198211212024211006',
+          email: 'adi.candra@smp.sch.id',
+          subject: 'Informatika',
+          photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop',
+          password: 'guru123',
+          isAdmin: true
+        });
+      } else if (!teachers.some(t => t.nip === '198211212024211006')) {
+        addDocument('teachers', {
+          id: 't-1',
+          name: 'Adi Candra Wirawan, S.Kom.',
+          nip: '198211212024211006',
+          email: 'adi.candra@smp.sch.id',
+          subject: 'Informatika',
+          photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop',
+          password: 'guru123',
+          isAdmin: true
+        });
+      }
+    }
+
+    if (announcements && announcements.length > 0) {
+      announcements.forEach(ann => {
+        if (ann.teacherName && ann.teacherName.toLowerCase().includes('bambang')) {
+          updateDocument('announcements', {
+            id: ann.id,
+            teacherName: 'Adi Candra Wirawan, S.Kom.',
+            teacherSubject: 'Informatika'
+          });
+        }
+      });
+    }
+
+    if (subjects && subjects.length > 0 && !subjects.some(s => s.name.toLowerCase() === 'informatika')) {
+      addDocument('subjects', {
+        id: 'subj-info',
+        name: 'Informatika'
+      });
+    }
+  }, [teachers, announcements, subjects]);
 
   // --- DB OPERATIONAL PERSISTENCE HELPERS ---
   const saveSchoolConfigState = (updated: SchoolConfig) => {
@@ -958,7 +1013,18 @@ export default function App() {
     const expectedAdminPass = schoolConfig?.adminPassword || 'admin123';
     if ((identifier.toLowerCase() === 'admin' || identifier.toLowerCase() === 'admin@sekolah.id') && (pass === expectedAdminPass || pass === 'admin123')) {
       setCurrentRole('Admin');
-      setActiveUser({ name: 'Administrator Utama', username: 'admin' });
+      const adminTeacher = teachers.find(t => t.nip === '198211212024211006') || {
+        id: 't-1',
+        name: 'Adi Candra Wirawan, S.Kom.',
+        username: 'admin',
+        nip: '198211212024211006',
+        email: 'adi.candra@smp.sch.id',
+        subject: 'Informatika',
+        photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop',
+        role: 'Admin',
+        isAdmin: true
+      };
+      setActiveUser({ ...adminTeacher, isAdmin: true, role: 'Admin' });
       return;
     }
 
@@ -1018,7 +1084,18 @@ export default function App() {
 
       if (email === 'admin@sekolah.id') {
         setCurrentRole('Admin');
-        setActiveUser({ name: 'Administrator Utama', username: 'admin', email: fbUser.email });
+        const adminTeacher = teachers.find(t => t.nip === '198211212024211006') || {
+          id: 't-1',
+          name: 'Adi Candra Wirawan, S.Kom.',
+          username: 'admin',
+          nip: '198211212024211006',
+          email: fbUser.email,
+          subject: 'Informatika',
+          photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop',
+          role: 'Admin',
+          isAdmin: true
+        };
+        setActiveUser({ ...adminTeacher, isAdmin: true, role: 'Admin' });
         return;
       }
 
@@ -1051,10 +1128,22 @@ export default function App() {
     setLoginError('');
     if (role === 'Admin') {
       setCurrentRole('Admin');
-      setActiveUser({ name: 'Administrator Utama', username: 'admin' });
+      const adminTeacher = teachers.find(t => t.nip === '198211212024211006') || {
+        id: 't-1',
+        name: 'Adi Candra Wirawan, S.Kom.',
+        username: 'admin',
+        nip: '198211212024211006',
+        email: 'adi.candra@smp.sch.id',
+        subject: 'Informatika',
+        photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop',
+        role: 'Admin',
+        isAdmin: true
+      };
+      setActiveUser({ ...adminTeacher, isAdmin: true, role: 'Admin' });
     } else if (role === 'Teacher') {
       setCurrentRole('Teacher');
-      setActiveUser(targetObj || teachers[0]);
+      const defaultTeacher = teachers.find(t => t.nip === '198211212024211006') || teachers[0];
+      setActiveUser(targetObj || defaultTeacher);
     } else {
       setCurrentRole('Student');
       const student = targetObj || students[0];
