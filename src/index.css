@@ -50,8 +50,94 @@ body {
   max-width: 100%;
   height: auto;
   border-radius: 0.5rem;
-  margin: 0.75rem 0;
-  display: inline-block;
+}
+
+/* Image Placement & Text Flow Classes */
+.quill-content img.img-center,
+.quill-content img[data-align="center"],
+.ql-editor img.img-center,
+.ql-editor img[data-align="center"] {
+  display: block !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  float: none !important;
+  clear: both;
+}
+
+.quill-content img.img-float-left,
+.quill-content img[data-align="left"],
+.ql-editor img.img-float-left,
+.ql-editor img[data-align="left"] {
+  float: left !important;
+  margin: 0.5rem 1.25rem 0.75rem 0 !important;
+  clear: left;
+}
+
+.quill-content img.img-float-right,
+.quill-content img[data-align="right"],
+.ql-editor img.img-float-right,
+.ql-editor img[data-align="right"] {
+  float: right !important;
+  margin: 0.5rem 0 0.75rem 1.25rem !important;
+  clear: right;
+}
+
+.quill-content img.img-full,
+.quill-content img[data-align="full"],
+.ql-editor img.img-full,
+.ql-editor img[data-align="full"] {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  float: none !important;
+  clear: both;
+}
+
+.quill-content img.img-inline,
+.quill-content img[data-align="inline"],
+.ql-editor img.img-inline,
+.ql-editor img[data-align="inline"] {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  margin: 0 0.35rem !important;
+  float: none !important;
+}
+
+/* Clearfix for question stimulus container so floated images never overflow */
+.quill-content::after,
+.ql-editor::after,
+.clearfix::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+/* Image Captions */
+.quill-content .img-caption,
+.ql-editor .img-caption {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-style: italic;
+  margin-top: 0.25rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+}
+
+/* Interactive Image Selection & Resizing in Question Editor */
+.ql-editor img {
+  cursor: pointer;
+  transition: outline 0.15s ease, box-shadow 0.15s ease;
+}
+.ql-editor img:hover {
+  outline: 2px dashed #6366f1 !important;
+  outline-offset: 2px !important;
+}
+.ql-editor img.active-selected-img {
+  outline: 3px solid #4f46e5 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25) !important;
 }
 .quill-content iframe {
   width: 100%;

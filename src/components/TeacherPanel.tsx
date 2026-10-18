@@ -2,8 +2,53 @@ import toast from 'react-hot-toast';
 import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
-import ReactQuill from 'react-quill-new';
+import ReactQuill, { Quill } from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
+import { 
+  QuestionImageStudioModal, 
+  EditorImageResizerOverlay, 
+  ImageDataModel 
+} from './QuestionImageStudio';
+
+// Register extended Image blot so Quill natively preserves style, class, data-align, and dimensions
+try {
+  if (Quill) {
+    const BaseImage = Quill.import('formats/image') as any;
+    if (BaseImage) {
+      class CustomQuestionImage extends BaseImage {
+        static blotName = 'image';
+        static tagName = 'IMG';
+
+        static formats(domNode: HTMLElement) {
+          const formats: any = super.formats(domNode) || {};
+          ['alt', 'height', 'width', 'style', 'class', 'data-align', 'data-caption'].forEach(attr => {
+            if (domNode.hasAttribute(attr)) {
+              formats[attr] = domNode.getAttribute(attr);
+            }
+          });
+          return formats;
+        }
+
+        format(name: string, value: any) {
+          if (['alt', 'height', 'width', 'style', 'class', 'data-align', 'data-caption'].includes(name)) {
+            if (value) {
+              this.domNode.setAttribute(name, value);
+            } else {
+              this.domNode.removeAttribute(name);
+            }
+          } else {
+            super.format(name, value);
+          }
+        }
+      }
+      Quill.register(CustomQuestionImage, true);
+    }
+  }
+} catch (e) {
+  console.warn('Custom image blot initialization fallback:', e);
+}
+
+const ReactQuillEditor = ReactQuill as any;
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage, db } from '../firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
@@ -2163,6 +2208,63 @@ export default function TeacherPanel({
   const [qEditorTab, setQEditorTab] = useState<'visual' | 'code' | 'preview'>('visual');
   const [showMathSymbols, setShowMathSymbols] = useState(false);
   const [isEditorExpanded, setIsEditorExpanded] = useState(false);
+
+  // Question Image Studio & Placement States
+  const [showImageStudio, setShowImageStudio] = useState(false);
+  const [editingImageTarget, setEditingImageTarget] = useState<ImageDataModel | null>(null);
+  const quillEditorRef = useRef<any>(null);
+  const editorContainerRef = useRef<HTMLDivElement | null>(null);
+  const expandedQuillEditorRef = useRef<any>(null);
+  const expandedEditorContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleInsertOrUpdateImage = (imgHtml: string, isUpdate: boolean, oldEl?: HTMLImageElement) => {
+    if (isUpdate && oldEl) {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = imgHtml;
+      const newImg = tempDiv.querySelector('img');
+      const newCaption = tempDiv.querySelector('.img-caption');
+
+      if (newImg) {
+        oldEl.src = newImg.src;
+        oldEl.className = newImg.className;
+        oldEl.setAttribute('data-align', newImg.getAttribute('data-align') || 'center');
+        oldEl.setAttribute('data-caption', newImg.getAttribute('data-caption') || '');
+        oldEl.setAttribute('style', newImg.getAttribute('style') || '');
+        oldEl.setAttribute('alt', newImg.getAttribute('alt') || 'Gambar Soal');
+
+        const nextEl = oldEl.nextElementSibling;
+        if (nextEl && nextEl.classList.contains('img-caption')) {
+          if (newCaption) {
+            nextEl.innerHTML = newCaption.innerHTML;
+            (nextEl as HTMLElement).style.textAlign = (newCaption as HTMLElement).style.textAlign;
+          } else {
+            nextEl.remove();
+          }
+        } else if (newCaption) {
+          oldEl.insertAdjacentElement('afterend', newCaption);
+        }
+      }
+
+      const currentEditor = isEditorExpanded 
+        ? expandedQuillEditorRef.current?.getEditor() 
+        : quillEditorRef.current?.getEditor();
+      if (currentEditor) {
+        setQText(currentEditor.root.innerHTML);
+      }
+    } else {
+      const currentEditor = isEditorExpanded 
+        ? expandedQuillEditorRef.current?.getEditor() 
+        : quillEditorRef.current?.getEditor();
+      if (currentEditor) {
+        const range = currentEditor.getSelection();
+        const index = range ? range.index : currentEditor.getLength();
+        currentEditor.clipboard.dangerouslyPasteHTML(index, imgHtml + '<p><br></p>');
+        setQText(currentEditor.root.innerHTML);
+      } else {
+        setQText(prev => (prev && prev !== '<p><br></p>' ? prev + '<br>' + imgHtml : imgHtml));
+      }
+    }
+  };
 
   const insertTextAtCursor = (before: string, after: string = '') => {
     setQText(prev => prev + before + (after ? 'teks' + after : ''));
@@ -9386,6 +9488,20 @@ export default function TeacherPanel({
                         >
                           📌 Kasus Riil
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingImageTarget(null);
+                            setShowImageStudio(true);
+                          }}
+                          className="px-2.5 py-0.5 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white border border-indigo-400 rounded-md text-[10px] font-black transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                          title="Buka Studio Format & Peletakan Gambar Soal (Resize, Rata Kiri Wrap, Tengah, Kanan, Caption)"
+                        >
+                          <Image className="w-3.5 h-3.5" />
+                          <span>🖼️ Sisipkan & Tata Gambar</span>
+                          <span className="bg-white/25 text-[8px] px-1 py-0.2 rounded-xs font-black uppercase tracking-wider">Mudah</span>
+                        </button>
                       </div>
 
                       <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
@@ -9405,23 +9521,35 @@ export default function TeacherPanel({
 
                     {/* MAIN EDITOR CONTENT BASED ON TAB */}
                     {qEditorTab === 'visual' && (
-                      <div className="question-quill-editor rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-2xs">
-                        <ReactQuill
+                      <div 
+                        ref={editorContainerRef}
+                        className="question-quill-editor rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-2xs relative"
+                      >
+                        <ReactQuillEditor
+                          ref={quillEditorRef}
                           theme="snow"
                           value={qText}
                           onChange={setQText}
                           modules={{
-                            toolbar: [
-                              [{ 'header': [1, 2, 3, false] }],
-                              ['bold', 'italic', 'underline', 'strike'],
-                              [{ 'script': 'sub'}, { 'script': 'super' }],
-                              [{ 'color': [] }, { 'background': [] }],
-                              [{ 'align': [] }],
-                              [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'indent': '-1'}, { 'indent': '+1' }],
-                              ['blockquote', 'code-block'],
-                              ['link', 'image'],
-                              ['clean']
-                            ],
+                            toolbar: {
+                              container: [
+                                [{ 'header': [1, 2, 3, false] }],
+                                ['bold', 'italic', 'underline', 'strike'],
+                                [{ 'script': 'sub'}, { 'script': 'super' }],
+                                [{ 'color': [] }, { 'background': [] }],
+                                [{ 'align': [] }],
+                                [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'indent': '-1'}, { 'indent': '+1' }],
+                                ['blockquote', 'code-block'],
+                                ['link', 'image'],
+                                ['clean']
+                              ],
+                              handlers: {
+                                image: () => {
+                                  setEditingImageTarget(null);
+                                  setShowImageStudio(true);
+                                }
+                              }
+                            }
                           }}
                           formats={[
                             'header',
@@ -9431,9 +9559,23 @@ export default function TeacherPanel({
                             'align',
                             'list', 'indent',
                             'blockquote', 'code-block',
-                            'link', 'image'
+                            'link', 'image',
+                            'style', 'class', 'data-align', 'data-caption', 'width', 'height'
                           ]}
                           placeholder="Tulis stimulus teks, wacana literasi, narasi cerita, rumus matematika, atau pertanyaan utama butir soal di sini..."
+                        />
+                        <EditorImageResizerOverlay
+                          editorContainerRef={editorContainerRef}
+                          onEditImageFull={(imgData) => {
+                            setEditingImageTarget(imgData);
+                            setShowImageStudio(true);
+                          }}
+                          onUpdateContent={() => {
+                            const editor = quillEditorRef.current?.getEditor();
+                            if (editor) {
+                              setQText(editor.root.innerHTML);
+                            }
+                          }}
                         />
                       </div>
                     )}
@@ -9600,6 +9742,19 @@ export default function TeacherPanel({
                             >
                               📌 Kasus Riil
                             </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingImageTarget(null);
+                                setShowImageStudio(true);
+                              }}
+                              className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg text-xs font-black shadow-xs flex items-center gap-1.5 cursor-pointer"
+                              title="Buka Studio Format & Peletakan Gambar Soal"
+                            >
+                              <Image className="w-3.5 h-3.5" />
+                              <span>🖼️ Sisipkan & Tata Gambar</span>
+                            </button>
                           </div>
 
                           <div className="flex items-center gap-2">
@@ -9615,23 +9770,35 @@ export default function TeacherPanel({
                         </div>
 
                         {/* Modal Quill */}
-                        <div className="question-quill-editor rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-2xs">
-                          <ReactQuill
+                        <div 
+                          ref={expandedEditorContainerRef}
+                          className="question-quill-editor rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-2xs relative"
+                        >
+                          <ReactQuillEditor
+                            ref={expandedQuillEditorRef}
                             theme="snow"
                             value={qText}
                             onChange={setQText}
                             modules={{
-                              toolbar: [
-                                [{ 'header': [1, 2, 3, false] }],
-                                ['bold', 'italic', 'underline', 'strike'],
-                                [{ 'script': 'sub'}, { 'script': 'super' }],
-                                [{ 'color': [] }, { 'background': [] }],
-                                [{ 'align': [] }],
-                                [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'indent': '-1'}, { 'indent': '+1' }],
-                                ['blockquote', 'code-block'],
-                                ['link', 'image'],
-                                ['clean']
-                              ],
+                              toolbar: {
+                                container: [
+                                  [{ 'header': [1, 2, 3, false] }],
+                                  ['bold', 'italic', 'underline', 'strike'],
+                                  [{ 'script': 'sub'}, { 'script': 'super' }],
+                                  [{ 'color': [] }, { 'background': [] }],
+                                  [{ 'align': [] }],
+                                  [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'indent': '-1'}, { 'indent': '+1' }],
+                                  ['blockquote', 'code-block'],
+                                  ['link', 'image'],
+                                  ['clean']
+                                ],
+                                handlers: {
+                                  image: () => {
+                                    setEditingImageTarget(null);
+                                    setShowImageStudio(true);
+                                  }
+                                }
+                              }
                             }}
                             formats={[
                               'header',
@@ -9641,10 +9808,24 @@ export default function TeacherPanel({
                               'align',
                               'list', 'indent',
                               'blockquote', 'code-block',
-                              'link', 'image'
+                              'link', 'image',
+                              'style', 'class', 'data-align', 'data-caption', 'width', 'height'
                             ]}
                             className="min-h-[350px]"
                             placeholder="Tulis stimulus teks secara lengkap di sini..."
+                          />
+                          <EditorImageResizerOverlay
+                            editorContainerRef={expandedEditorContainerRef}
+                            onEditImageFull={(imgData) => {
+                              setEditingImageTarget(imgData);
+                              setShowImageStudio(true);
+                            }}
+                            onUpdateContent={() => {
+                              const editor = expandedQuillEditorRef.current?.getEditor();
+                              if (editor) {
+                                setQText(editor.root.innerHTML);
+                              }
+                            }}
                           />
                         </div>
                       </div>
@@ -12252,6 +12433,18 @@ export default function TeacherPanel({
           </div>
         </div>
       )}
+
+      {/* QUESTION IMAGE STUDIO MODAL */}
+      <QuestionImageStudioModal
+        isOpen={showImageStudio}
+        onClose={() => {
+          setShowImageStudio(false);
+          setEditingImageTarget(null);
+        }}
+        onInsertOrUpdate={handleInsertOrUpdateImage}
+        currentQuestionText={qText}
+        initialData={editingImageTarget}
+      />
     </div>
   );
 }
