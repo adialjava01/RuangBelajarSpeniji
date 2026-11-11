@@ -63,7 +63,7 @@ import {
   BookOpen, Plus, Trash2, Calendar, FileText, ToggleLeft, ToggleRight, ListTodo, Key, Clock, HelpCircle, Save, Check,
   FileSpreadsheet, Upload, AlertCircle, Clipboard, Download, Info, Printer, Filter, BarChart3, X, Settings, Building, UserCheck, ShieldAlert,
   Edit3, Camera, User, Image, MapPin, Bell, Megaphone, AlertTriangle, Sparkles, Send, Database, CheckCircle, FileCode, Users,
-  Folder, FolderPlus, Scissors, ClipboardPaste, Copy, CornerUpLeft, ArrowLeft, Search, Tv, Radio, Eye, Play, Square, Maximize2, Minimize2, MousePointer, ChevronLeft, ChevronRight, Lock, Unlock, ExternalLink,
+  Folder, FolderPlus, Scissors, ClipboardPaste, Copy, CornerUpLeft, ArrowLeft, Search, Tv, Radio, Eye, Play, Square, Maximize2, Minimize2, MousePointer, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Lock, Unlock, ExternalLink,
   Award, TrendingUp, CheckCircle2, XCircle, Sliders, FileCheck, Layers, Code, Calculator, Table, RotateCcw
 } from 'lucide-react';
 
@@ -2803,6 +2803,8 @@ export default function TeacherPanel({
   const [qEditorTab, setQEditorTab] = useState<'visual' | 'code' | 'preview'>('visual');
   const [showMathSymbols, setShowMathSymbols] = useState(false);
   const [isEditorExpanded, setIsEditorExpanded] = useState(false);
+  const [isConfigCollapsed, setIsConfigCollapsed] = useState(false);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
 
   // Question Image Studio & Placement States
   const [showImageStudio, setShowImageStudio] = useState(false);
@@ -9527,7 +9529,16 @@ export default function TeacherPanel({
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 relative z-10">
+                <div className="flex items-center gap-2.5 relative z-10 flex-wrap justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarVisible(!isSidebarVisible)}
+                    className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs text-xs"
+                    title={isSidebarVisible ? "Sembunyikan Panel Kanan agar area editor lebih lebar" : "Tampilkan Panel Soal"}
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>{isSidebarVisible ? 'Sembunyikan Panel Soal' : `Daftar Soal (${examQuestions.length})`}</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -9535,14 +9546,14 @@ export default function TeacherPanel({
                       setShowAddQuestionBankModal(false);
                       setEditingQbId(null);
                     }}
-                    className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all cursor-pointer flex items-center gap-2 shadow-xs"
+                    className="px-4 py-2 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs text-xs"
                   >
                     <X className="w-4 h-4" /> Batal
                   </button>
                   <button
                     type="submit"
                     disabled={examQuestions.length === 0}
-                    className={`px-8 py-2.5 text-white font-bold rounded-xl disabled:opacity-50 transition-all cursor-pointer flex items-center gap-2 shadow-lg shadow-indigo-200/50 hover:shadow-indigo-300/50 ${
+                    className={`px-6 py-2 text-white font-bold rounded-xl disabled:opacity-50 transition-all cursor-pointer flex items-center gap-2 shadow-md text-xs ${
                       isQuestionBankMode ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600' : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700'
                     }`}
                   >
@@ -9552,137 +9563,168 @@ export default function TeacherPanel({
               </div>
 
               {/* BODY (Scrollable) */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 lg:gap-8 max-w-[1600px] mx-auto">
-                  {/* LEFT COLUMN: Editor & Config */}
-                  <div className="xl:col-span-8 space-y-6 lg:space-y-8">
+              <div className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 lg:gap-5 max-w-[1750px] mx-auto">
+                  {/* LEFT COLUMN: Editor & Config (Expanded width) */}
+                  <div className={`${isSidebarVisible ? 'xl:col-span-9 2xl:col-span-9' : 'xl:col-span-12 2xl:col-span-12'} space-y-4 transition-all duration-200`}>
                     
-                    {/* Exam / QB Config */}
-                    <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/40 relative overflow-hidden">
-                      <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
-                      <div className="flex items-center gap-3 border-b border-slate-100 pb-4 mb-6">
-                        <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
-                          <Settings className="w-5 h-5" />
+                    {/* Exam / QB Config (Compact & Collapsible) */}
+                    <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs relative overflow-hidden transition-all">
+                      <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2.5 mb-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`p-1.5 rounded-lg ${isQuestionBankMode ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                            <Settings className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-black text-slate-900 text-xs sm:text-sm tracking-wide uppercase flex items-center gap-2">
+                              <span>Pengaturan Dasar {isQuestionBankMode ? 'Bank Soal' : 'Paket Ujian'}</span>
+                              {isConfigCollapsed && (
+                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md normal-case">
+                                  {isQuestionBankMode ? (qbTitle || 'Tanpa Judul') : (examTitle || 'Tanpa Judul')}
+                                </span>
+                              )}
+                            </h4>
+                          </div>
                         </div>
-                        <h4 className="font-black text-slate-900 text-sm tracking-widest uppercase">Pengaturan Dasar</h4>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsConfigCollapsed(!isConfigCollapsed)}
+                          className="px-2.5 py-1 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                          title={isConfigCollapsed ? "Buka rincian pengaturan dasar" : "Tutup/Ringkas pengaturan dasar agar area editor lebih luas"}
+                        >
+                          <span>{isConfigCollapsed ? 'Buka Pengaturan' : 'Ringkas Area'}</span>
+                          {isConfigCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                        </button>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-6 gap-5">
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold mb-1 text-slate-700">{isQuestionBankMode ? 'Judul Bank Soal *' : 'Judul Paket Ujian *'}</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder={isQuestionBankMode ? "Contoh: Bank Soal Matematika K-13" : "Contoh: Penilaian Harian Aljabar"}
-                    value={isQuestionBankMode ? qbTitle : examTitle}
-                    onChange={(e) => isQuestionBankMode ? setQbTitle(e.target.value) : setExamTitle(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-slate-700">Rencana Jml Soal *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={targetQuestionCount}
-                    onChange={(e) => setTargetQuestionCount(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none"
-                  />
-                </div>
-                {!isQuestionBankMode && (
-                  <>
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-slate-700">Untuk Kelas *</label>
-                      <select
-                        required
-                        value={examClass}
-                        onChange={(e) => setExamClass(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none"
-                      >
-                        <option value="">Pilih Kelas</option>
-                        {sortedClasses.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-slate-700">Token *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="E.g. ALJB99"
-                        value={examToken}
-                        onChange={(e) => setExamToken(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm uppercase focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none font-bold text-indigo-700 tracking-wider"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-slate-700">Durasi (Menit) *</label>
-                      <input
-                        type="number"
-                        required
-                        value={examDuration}
-                        onChange={(e) => setExamDuration(Number(e.target.value))}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none"
-                      />
-                    </div>
-                  </>
-                )}
-                {isQuestionBankMode && (
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold mb-1 text-slate-700">Mata Pelajaran *</label>
-                    <select
-                      required
-                      value={qbSubject}
-                      onChange={(e) => setQbSubject(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none"
-                    >
-                      <option value="">Pilih Mapel</option>
-                      {subjects.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
 
-              {/* Subject Selection & Display Score Settings for Exam */}
-              {!isQuestionBankMode && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4 pt-4 border-t border-slate-100">
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-slate-700">Mata Pelajaran *</label>
-                    <select
-                      required
-                      value={examSubject}
-                      onChange={(e) => setExamSubject(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none font-medium"
-                    >
-                      <option value="">Pilih Mapel</option>
-                      {subjects.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                      {/* If Collapsed: Single-line minimal summary badge */}
+                      {isConfigCollapsed ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs py-1 px-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-slate-600 font-medium text-[11px]">
+                            <span><strong>Judul:</strong> {isQuestionBankMode ? qbTitle || '-' : examTitle || '-'}</span>
+                            <span>•</span>
+                            <span><strong>Mapel:</strong> {getSubjectName(isQuestionBankMode ? qbSubject : examSubject) || '-'}</span>
+                            <span>•</span>
+                            <span><strong>Target:</strong> {targetQuestionCount} Soal</span>
+                            {!isQuestionBankMode && (
+                              <>
+                                <span>•</span>
+                                <span><strong>Kelas:</strong> {sortedClasses.find(c => c.id === examClass)?.name || '-'}</span>
+                                <span>•</span>
+                                <span><strong>Token:</strong> {examToken || '-'}</span>
+                                <span>•</span>
+                                <span><strong>Durasi:</strong> {examDuration}m</span>
+                              </>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setIsConfigCollapsed(false)}
+                            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+                          >
+                            Ubah Pengaturan
+                          </button>
+                        </div>
+                      ) : (
+                        /* When Expanded: Compact, tight inputs */
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-2.5 text-xs">
+                            <div className={isQuestionBankMode ? "md:col-span-6" : "md:col-span-4"}>
+                              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                                {isQuestionBankMode ? 'Judul Bank Soal *' : 'Judul Paket Ujian *'}
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                placeholder={isQuestionBankMode ? "Contoh: Bank Soal Informatika K-13" : "Contoh: Penilaian Harian Aljabar"}
+                                value={isQuestionBankMode ? qbTitle : examTitle}
+                                onChange={(e) => isQuestionBankMode ? setQbTitle(e.target.value) : setExamTitle(e.target.value)}
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-hidden font-medium"
+                              />
+                            </div>
 
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-slate-700">
-                      Tampilkan Nilai Hasil Belajar ke Siswa *
-                    </label>
-                    <select
-                      value={showScoreToStudent ? 'true' : 'false'}
-                      onChange={(e) => setShowScoreToStudent(e.target.value === 'true')}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all outline-none font-bold text-indigo-900"
-                    >
-                      <option value="true">Ditampilkan (Siswa melihat nilai setelah selesai)</option>
-                      <option value="false">Tidak Ditampilkan (Nilai disembunyikan dari siswa)</option>
-                    </select>
-                    <span className="text-[10px] text-slate-500 block mt-1 font-medium">
-                      * (Catatan: Untuk Ujian yang memuat soal Uraian/Esai, Nilai otomatis disembunyikan sampai diperiksa Guru)
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div> {/* END CONFIG CARD */}
+                            <div className={isQuestionBankMode ? "md:col-span-4" : "md:col-span-3"}>
+                              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Mata Pelajaran *</label>
+                              <select
+                                required
+                                value={isQuestionBankMode ? qbSubject : examSubject}
+                                onChange={(e) => isQuestionBankMode ? setQbSubject(e.target.value) : setExamSubject(e.target.value)}
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-hidden font-medium"
+                              >
+                                <option value="">Pilih Mapel</option>
+                                {subjects.map(s => (
+                                  <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className={isQuestionBankMode ? "md:col-span-2" : "md:col-span-2"}>
+                              <label className="block text-[10px] font-black uppercase text-slate-500 mb-1 text-center">Target Soal *</label>
+                              <input
+                                type="number"
+                                min="1"
+                                required
+                                value={targetQuestionCount}
+                                onChange={(e) => setTargetQuestionCount(Number(e.target.value))}
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-hidden font-bold text-center"
+                              />
+                            </div>
+
+                            {!isQuestionBankMode && (
+                              <>
+                                <div className="md:col-span-3">
+                                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Untuk Kelas *</label>
+                                  <select
+                                    required
+                                    value={examClass}
+                                    onChange={(e) => setExamClass(e.target.value)}
+                                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-hidden font-medium"
+                                  >
+                                    <option value="">Pilih Kelas</option>
+                                    {sortedClasses.map(c => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="md:col-span-3">
+                                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Token CBT *</label>
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="E.g. ALJB99"
+                                    value={examToken}
+                                    onChange={(e) => setExamToken(e.target.value)}
+                                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs uppercase focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-hidden font-bold text-indigo-700 tracking-wider"
+                                  />
+                                </div>
+                                <div className="md:col-span-3">
+                                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Durasi (Menit) *</label>
+                                  <input
+                                    type="number"
+                                    required
+                                    value={examDuration}
+                                    onChange={(e) => setExamDuration(Number(e.target.value))}
+                                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-hidden"
+                                  />
+                                </div>
+                                <div className="md:col-span-6">
+                                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Tampilkan Nilai ke Siswa *</label>
+                                  <select
+                                    value={showScoreToStudent ? 'true' : 'false'}
+                                    onChange={(e) => setShowScoreToStudent(e.target.value === 'true')}
+                                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-hidden font-bold text-indigo-900"
+                                  >
+                                    <option value="true">Ditampilkan (Siswa melihat nilai setelah selesai)</option>
+                                    <option value="false">Tidak Ditampilkan (Nilai disembunyikan dari siswa)</option>
+                                  </select>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div> {/* END CONFIG CARD */}
 
               {/* BANK SOAL IMPORTER SECTION */}
               {!isQuestionBankMode && (
@@ -9974,17 +10016,17 @@ export default function TeacherPanel({
                 )}
               </div>
 
-              {/* Question Editor section */}
-              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+              {/* Question Editor section (Full Width & Spacious) */}
+              <div className="bg-white p-4 sm:p-6 lg:p-7 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
                 {/* Header with Badges & Action Buttons */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
-                      <Edit3 className="w-5 h-5" />
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs shrink-0">
+                      <Edit3 className="w-4 h-4" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-extrabold text-slate-900 text-base tracking-tight">Editor Butir Soal</h4>
+                        <h4 className="font-extrabold text-slate-900 text-sm sm:text-base tracking-tight">Editor Butir Soal</h4>
                         {editingQuestionIndex !== null ? (
                           <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2.5 py-0.5 rounded-full border border-amber-300">
                             Sedang Mengedit Soal #{editingQuestionIndex + 1}
@@ -9995,14 +10037,45 @@ export default function TeacherPanel({
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Susun stimulus narasi, wacana literasi, formula matematika/IPA, tabel data, atau potongan koding secara visual.
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Area kerja leluasa untuk menyusun stimulus narasi, wacana literasi, formula matematika/IPA, tabel data, atau koding.
                       </p>
                     </div>
                   </div>
 
-                  {/* Header Utility Buttons */}
+                  {/* Header Utility & Parameter Controls (Jenis Soal & Bobot di Header agar Editor Luas) */}
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* Jenis Soal Selector */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 px-2.5 py-1.5 rounded-xl border border-slate-200 transition">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-wide">Jenis:</span>
+                      <select
+                        value={currentQType}
+                        onChange={(e) => setCurrentQType(e.target.value as QuestionType)}
+                        className="text-xs font-bold text-indigo-900 bg-transparent focus:outline-hidden cursor-pointer"
+                      >
+                        <option value="PilihanGanda">1. Pilihan Ganda Standar</option>
+                        <option value="PilihanGandaKompleks">2. Pilihan Ganda Kompleks (Multi)</option>
+                        <option value="PilihanAsosiatif">3. Pilihan Asosiatif (1,2,3,4)</option>
+                        <option value="SebabAkibat">4. Pilihan Sebab-Akibat</option>
+                        <option value="Uraian">5. Uraian (Esai)</option>
+                      </select>
+                    </div>
+
+                    {/* Bobot Skor */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-wide">Bobot:</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        required
+                        value={qScore}
+                        onChange={(e) => setQScore(Number(e.target.value))}
+                        className="w-12 text-xs font-black text-indigo-700 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-center focus:outline-hidden"
+                      />
+                    </div>
+
+                    {/* Simbol Sains / Math button */}
                     <button
                       type="button"
                       onClick={() => setShowMathSymbols(prev => !prev)}
@@ -10017,6 +10090,7 @@ export default function TeacherPanel({
                       <span>Simbol Sains / Math</span>
                     </button>
 
+                    {/* Layar Penuh button */}
                     <button
                       type="button"
                       onClick={() => setIsEditorExpanded(prev => !prev)}
@@ -10031,7 +10105,7 @@ export default function TeacherPanel({
 
                 {/* Quick Math & Science Symbol Palette (Collapsible) */}
                 {showMathSymbols && (
-                  <div className="p-4 bg-indigo-50/70 rounded-2xl border border-indigo-100 space-y-3 animate-fade-in">
+                  <div className="p-3.5 bg-indigo-50/70 rounded-2xl border border-indigo-100 space-y-2.5 animate-fade-in">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Calculator className="w-4 h-4 text-indigo-600" />
@@ -10048,16 +10122,16 @@ export default function TeacherPanel({
                       </button>
                     </div>
                     
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                       <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Aritmatika & Aljabar</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Aritmatika & Aljabar</span>
                         <div className="flex flex-wrap gap-1">
                           {['±', '×', '÷', '≠', '≈', '≤', '≥', '√', 'π', '∞', '∑', '∫'].map(sym => (
                             <button
                               key={sym}
                               type="button"
                               onClick={() => handleInsertSymbol(sym)}
-                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200"
+                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200 cursor-pointer"
                             >
                               {sym}
                             </button>
@@ -10066,14 +10140,14 @@ export default function TeacherPanel({
                       </div>
 
                       <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Pangkat & Subskrip</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Pangkat & Subskrip</span>
                         <div className="flex flex-wrap gap-1">
                           {['²', '³', '⁴', 'ⁿ', '₁', '₂', '₃', '₄', '₀'].map(sym => (
                             <button
                               key={sym}
                               type="button"
                               onClick={() => handleInsertSymbol(sym)}
-                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200"
+                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200 cursor-pointer"
                             >
                               {sym}
                             </button>
@@ -10082,14 +10156,14 @@ export default function TeacherPanel({
                       </div>
 
                       <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Satuan, Derajat & Sains</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Satuan, Derajat & Sains</span>
                         <div className="flex flex-wrap gap-1">
                           {['°C', '°F', '°', 'Ω', 'µ', '%', '‰', 'Å', 'λ', 'ρ'].map(sym => (
                             <button
                               key={sym}
                               type="button"
                               onClick={() => handleInsertSymbol(sym)}
-                              className="px-2 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200"
+                              className="px-2 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200 cursor-pointer"
                             >
                               {sym}
                             </button>
@@ -10098,14 +10172,14 @@ export default function TeacherPanel({
                       </div>
 
                       <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Panah & Reaksi Kimia</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Panah & Reaksi Kimia</span>
                         <div className="flex flex-wrap gap-1">
                           {['→', '←', '↔', '⇒', '⇔', '⇌', '↑', '↓'].map(sym => (
                             <button
                               key={sym}
                               type="button"
                               onClick={() => handleInsertSymbol(sym)}
-                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200"
+                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200 cursor-pointer"
                             >
                               {sym}
                             </button>
@@ -10114,14 +10188,14 @@ export default function TeacherPanel({
                       </div>
 
                       <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Huruf Yunani (Fisika / Matematika)</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Huruf Yunani (Fisika / Matematika)</span>
                         <div className="flex flex-wrap gap-1">
                           {['α', 'β', 'γ', 'θ', 'Δ', 'π', 'σ', 'ω', 'μ'].map(sym => (
                             <button
                               key={sym}
                               type="button"
                               onClick={() => handleInsertSymbol(sym)}
-                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200"
+                              className="w-7 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-mono font-bold transition border border-slate-200 cursor-pointer"
                             >
                               {sym}
                             </button>
@@ -10130,14 +10204,14 @@ export default function TeacherPanel({
                       </div>
 
                       <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-2xs">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Informatika & Logika Koding</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Informatika & Logika Koding</span>
                         <div className="flex flex-wrap gap-1">
                           {['==', '!=', '<=', '>=', '&&', '||', '++', '--', '//'].map(sym => (
                             <button
                               key={sym}
                               type="button"
                               onClick={() => handleInsertSymbol(sym)}
-                              className="px-2 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-[11px] font-mono font-bold transition border border-slate-200"
+                              className="px-2 h-7 bg-slate-50 hover:bg-indigo-600 hover:text-white rounded-lg text-[11px] font-mono font-bold transition border border-slate-200 cursor-pointer"
                             >
                               {sym}
                             </button>
@@ -10148,281 +10222,262 @@ export default function TeacherPanel({
                   </div>
                 )}
                 
-                {/* Question Settings Row: Kind & Score & Font */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="md:col-span-2 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-indigo-600" />
-                        Pertanyaan / Stimulus Utama *
-                      </label>
+                {/* Question Stimulus Area (Full 100% Width) */}
+                <div className="space-y-3 w-full">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                      Pertanyaan / Stimulus Utama *
+                    </label>
 
-                      {/* Mode Tabs: Visual WYSIWYG, Kode HTML, CBT Preview */}
-                      <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200 self-start sm:self-auto">
-                        <button
-                          type="button"
-                          onClick={() => setQEditorTab('visual')}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                            qEditorTab === 'visual'
-                              ? 'bg-white text-indigo-700 shadow-2xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Visual WYSIWYG</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setQEditorTab('code')}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                            qEditorTab === 'code'
-                              ? 'bg-white text-indigo-700 shadow-2xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          <Code className="w-3.5 h-3.5" />
-                          <span>Kode HTML</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setQEditorTab('preview')}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                            qEditorTab === 'preview'
-                              ? 'bg-white text-indigo-700 shadow-2xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Pratinjau CBT</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Quick Templates Bar & Font Selection */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200/80">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1 mr-1">
-                          <Sparkles className="w-3 h-3 text-amber-500" /> Template:
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleInsertTemplate('literasi')}
-                          className="px-2 py-0.5 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 border border-slate-200 rounded-md text-[10px] font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                          title="Sisipkan Template Wacana Literasi ANBK"
-                        >
-                          📖 Wacana Literasi
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleInsertTemplate('koding')}
-                          className="px-2 py-0.5 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 rounded-md text-[10px] font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                          title="Sisipkan Template Potongan Kode Informatika"
-                        >
-                          💻 Koding Informatika
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleInsertTemplate('tabel')}
-                          className="px-2 py-0.5 bg-white hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 border border-slate-200 rounded-md text-[10px] font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                          title="Sisipkan Tabel Data Komparasi"
-                        >
-                          📊 Tabel Data
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleInsertTemplate('kasus')}
-                          className="px-2 py-0.5 bg-white hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 border border-slate-200 rounded-md text-[10px] font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                          title="Sisipkan Template Kasus Riil"
-                        >
-                          📌 Kasus Riil
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingImageTarget(null);
-                            setShowImageStudio(true);
-                          }}
-                          className="px-2.5 py-0.5 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white border border-indigo-400 rounded-md text-[10px] font-black transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                          title="Buka Studio Format & Peletakan Gambar Soal (Resize, Rata Kiri Wrap, Tengah, Kanan, Caption)"
-                        >
-                          <Image className="w-3.5 h-3.5" />
-                          <span>🖼️ Sisipkan & Tata Gambar</span>
-                          <span className="bg-white/25 text-[8px] px-1 py-0.2 rounded-xs font-black uppercase tracking-wider">Mudah</span>
-                        </button>
-                      </div>
-
-                      <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
-                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Font:</span>
-                        <select
-                          value={qFontPreset}
-                          onChange={(e) => setQFontPreset(e.target.value as any)}
-                          className="text-[10px] font-bold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
-                        >
-                          <option value="Sans">Default Sans</option>
-                          <option value="Serif">Elegant Serif (Sastra)</option>
-                          <option value="Grotesk">Modern Grotesk</option>
-                          <option value="Mono">Tech Monospace (Koding)</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* MAIN EDITOR CONTENT BASED ON TAB */}
-                    {qEditorTab === 'visual' && (
-                      <div 
-                        ref={editorContainerRef}
-                        className="question-quill-editor rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-2xs relative"
+                    {/* Mode Tabs: Visual WYSIWYG, Kode HTML, CBT Preview */}
+                    <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setQEditorTab('visual')}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                          qEditorTab === 'visual'
+                            ? 'bg-white text-indigo-700 shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
                       >
-                        <ReactQuillEditor
-                          ref={quillEditorRef}
-                          theme="snow"
-                          value={qText}
-                          onChange={setQText}
-                          modules={{
-                            toolbar: {
-                              container: [
-                                [{ 'header': [1, 2, 3, false] }],
-                                ['bold', 'italic', 'underline', 'strike'],
-                                [{ 'script': 'sub'}, { 'script': 'super' }],
-                                [{ 'color': [] }, { 'background': [] }],
-                                [{ 'align': [] }],
-                                [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'indent': '-1'}, { 'indent': '+1' }],
-                                ['blockquote', 'code-block'],
-                                ['link', 'image'],
-                                ['clean']
-                              ],
-                              handlers: {
-                                image: () => {
-                                  setEditingImageTarget(null);
-                                  setShowImageStudio(true);
-                                }
-                              }
-                            }
-                          }}
-                          formats={[
-                            'header',
-                            'bold', 'italic', 'underline', 'strike',
-                            'script',
-                            'color', 'background',
-                            'align',
-                            'list', 'indent',
-                            'blockquote', 'code-block',
-                            'link', 'image',
-                            'style', 'class', 'data-align', 'data-caption', 'width', 'height'
-                          ]}
-                          placeholder="Tulis stimulus teks, wacana literasi, narasi cerita, rumus matematika, atau pertanyaan utama butir soal di sini..."
-                        />
-                        <EditorImageResizerOverlay
-                          editorContainerRef={editorContainerRef}
-                          onEditImageFull={(imgData) => {
-                            setEditingImageTarget(imgData);
-                            setShowImageStudio(true);
-                          }}
-                          onUpdateContent={() => {
-                            const editor = quillEditorRef.current?.getEditor();
-                            if (editor) {
-                              setQText(editor.root.innerHTML);
-                            }
-                          }}
-                        />
-                      </div>
-                    )}
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Visual WYSIWYG</span>
+                      </button>
 
-                    {qEditorTab === 'code' && (
-                      <div className="space-y-2">
-                        <textarea
-                          rows={8}
-                          placeholder="<p>Ketikkan kode HTML atau teks stimulus di sini...</p>"
-                          value={qText}
-                          onChange={(e) => setQText(e.target.value)}
-                          className="w-full px-3.5 py-2.5 font-mono text-xs border border-slate-300 bg-slate-900 text-emerald-400 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-hidden leading-relaxed"
-                        />
-                        <p className="text-[11px] text-slate-400">
-                          Anda sedang mengedit dalam mode kode HTML langsung. Anda dapat menempelkan sintaks HTML kustom dari dokumen eksternal.
-                        </p>
-                      </div>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => setQEditorTab('code')}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                          qEditorTab === 'code'
+                            ? 'bg-white text-indigo-700 shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <Code className="w-3.5 h-3.5" />
+                        <span>Kode HTML</span>
+                      </button>
 
-                    {qEditorTab === 'preview' && (
-                      <div className="bg-slate-50 border border-indigo-100 p-4 sm:p-5 rounded-2xl shadow-2xs space-y-4">
-                        <div className="flex items-center justify-between border-b border-indigo-100/80 pb-2.5">
-                          <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                            Simulasi Tampilan Butir Soal di Layar Ujian Siswa:
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-500">
-                            Preset Font: {qFontPreset}
-                          </span>
-                        </div>
-
-                        {/* Rendered Stimulus Box */}
-                        <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs leading-relaxed text-sm">
-                          {qText && qText.replace(/<[^>]*>/g, '').trim() !== '' ? (
-                            renderFormattedText(qText, qFontPreset)
-                          ) : (
-                            <span className="text-slate-400 italic text-xs">Belum ada konten stimulus yang dituliskan...</span>
-                          )}
-                        </div>
-
-                        {/* Media Preview if attached */}
-                        {qMediaType !== 'None' && qMediaUrl && (
-                          <div className="bg-white p-3 rounded-xl border border-slate-200 text-center">
-                            <span className="text-[10px] font-bold text-slate-400 block mb-1">Pratinjau Media Lampiran:</span>
-                            {qMediaType === 'Image' && (
-                              <img src={qMediaUrl} alt="Stimulus" className="max-h-48 mx-auto rounded-lg object-contain border" />
-                            )}
-                            {qMediaType === 'Video' && (
-                              <div className="text-xs text-indigo-600 font-mono">🎥 Media Video Tersemat: {qMediaUrl}</div>
-                            )}
-                            {qMediaType === 'Audio' && (
-                              <div className="text-xs text-indigo-600 font-mono">🔊 Media Audio Listening Tersemat: {qMediaUrl}</div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Word, Character and Statistics Footer */}
-                    <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 px-1 pt-1 border-t border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <span>Jumlah Kata: <strong className="text-slate-700 font-extrabold">{qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() ? qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().split(' ').length : 0}</strong></span>
-                        <span>•</span>
-                        <span>Karakter: <strong className="text-slate-700 font-extrabold">{qText.replace(/<[^>]*>/g, '').length}</strong></span>
-                        <span>•</span>
-                        <span>Estimasi Baca: <strong className="text-indigo-600 font-extrabold">~{Math.max(5, Math.ceil(((qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().split(' ').length || 1) / 180) * 60))} dtk</strong></span>
-                      </div>
-
-                      {qText && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm('Bersihkan isi pertanyaan / stimulus soal ini?')) {
-                              setQText('');
-                            }
-                          }}
-                          className="text-red-500 hover:text-red-700 hover:underline cursor-pointer flex items-center gap-1 font-semibold"
-                        >
-                          <RotateCcw className="w-3 h-3" /> Bersihkan Editor
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => setQEditorTab('preview')}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                          qEditorTab === 'preview'
+                            ? 'bg-white text-indigo-700 shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Pratinjau CBT</span>
+                      </button>
                     </div>
                   </div>
 
-                  {/* RIGHT COLUMN: Question Type */}
-                  <div>
-                    <label className="block text-xs font-bold mb-1 text-slate-700">Jenis Soal *</label>
-                    <select
-                      value={currentQType}
-                      onChange={(e) => setCurrentQType(e.target.value as QuestionType)}
-                      className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm font-bold text-indigo-900"
+                  {/* Quick Templates Bar & Font Selection */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200/80">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1 mr-1">
+                        <Sparkles className="w-3 h-3 text-amber-500" /> Template:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleInsertTemplate('literasi')}
+                        className="px-2.5 py-1 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Sisipkan Template Wacana Literasi ANBK"
+                      >
+                        📖 Wacana Literasi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInsertTemplate('koding')}
+                        className="px-2.5 py-1 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Sisipkan Template Potongan Kode Informatika"
+                      >
+                        💻 Koding Informatika
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInsertTemplate('tabel')}
+                        className="px-2.5 py-1 bg-white hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Sisipkan Tabel Data Komparasi"
+                      >
+                        📊 Tabel Data
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInsertTemplate('kasus')}
+                        className="px-2.5 py-1 bg-white hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Sisipkan Template Kasus Riil"
+                      >
+                        📌 Kasus Riil
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingImageTarget(null);
+                          setShowImageStudio(true);
+                        }}
+                        className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white border border-indigo-400 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        title="Buka Studio Format & Peletakan Gambar Soal (Resize, Rata Kiri Wrap, Tengah, Kanan, Caption)"
+                      >
+                        <Image className="w-3.5 h-3.5" />
+                        <span>🖼️ Sisipkan & Tata Gambar</span>
+                        <span className="bg-white/25 text-[8px] px-1 py-0.2 rounded-xs font-black uppercase tracking-wider">Mudah</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                      <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Font:</span>
+                      <select
+                        value={qFontPreset}
+                        onChange={(e) => setQFontPreset(e.target.value as any)}
+                        className="text-xs font-bold text-slate-700 bg-transparent focus:outline-hidden cursor-pointer"
+                      >
+                        <option value="Sans">Default Sans</option>
+                        <option value="Serif">Elegant Serif (Sastra)</option>
+                        <option value="Grotesk">Modern Grotesk</option>
+                        <option value="Mono">Tech Monospace (Koding)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* MAIN EDITOR CONTENT BASED ON TAB (Full Width) */}
+                  {qEditorTab === 'visual' && (
+                    <div 
+                      ref={editorContainerRef}
+                      className="question-quill-editor rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-2xs relative w-full"
                     >
-                      <option value="PilihanGanda">1. Pilihan Ganda Standar</option>
-                      <option value="PilihanGandaKompleks">2. Pilihan Ganda Kompleks (Multi)</option>
-                      <option value="PilihanAsosiatif">3. Pilihan Asosiatif (Kombinasi 1,2,3,4)</option>
-                      <option value="SebabAkibat">4. Pilihan Sebab-Akibat</option>
-                      <option value="Uraian">5. Uraian (Esai)</option>
-                    </select>
+                      <ReactQuillEditor
+                        ref={quillEditorRef}
+                        theme="snow"
+                        value={qText}
+                        onChange={setQText}
+                        modules={{
+                          toolbar: {
+                            container: [
+                              [{ 'header': [1, 2, 3, false] }],
+                              ['bold', 'italic', 'underline', 'strike'],
+                              [{ 'script': 'sub'}, { 'script': 'super' }],
+                              [{ 'color': [] }, { 'background': [] }],
+                              [{ 'align': [] }],
+                              [{ 'list': 'ordered'}, { 'list': 'bullet' }, { 'indent': '-1'}, { 'indent': '+1' }],
+                              ['blockquote', 'code-block'],
+                              ['link', 'image'],
+                              ['clean']
+                            ],
+                            handlers: {
+                              image: () => {
+                                setEditingImageTarget(null);
+                                setShowImageStudio(true);
+                              }
+                            }
+                          }
+                        }}
+                        formats={[
+                          'header',
+                          'bold', 'italic', 'underline', 'strike',
+                          'script',
+                          'color', 'background',
+                          'align',
+                          'list', 'indent',
+                          'blockquote', 'code-block',
+                          'link', 'image'
+                        ]}
+                        placeholder="Tulis stimulus teks, wacana literasi, narasi cerita, rumus matematika, atau pertanyaan utama butir soal di sini..."
+                      />
+                      <EditorImageResizerOverlay
+                        editorContainerRef={editorContainerRef}
+                        onEditImageFull={(imgData) => {
+                          setEditingImageTarget(imgData);
+                          setShowImageStudio(true);
+                        }}
+                        onUpdateContent={() => {
+                          const editor = quillEditorRef.current?.getEditor();
+                          if (editor) {
+                            setQText(editor.root.innerHTML);
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {qEditorTab === 'code' && (
+                    <div className="space-y-2 w-full">
+                      <textarea
+                        rows={10}
+                        placeholder="<p>Ketikkan kode HTML atau teks stimulus di sini...</p>"
+                        value={qText}
+                        onChange={(e) => setQText(e.target.value)}
+                        className="w-full px-3.5 py-2.5 font-mono text-xs border border-slate-300 bg-slate-900 text-emerald-400 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-hidden leading-relaxed"
+                      />
+                      <p className="text-[11px] text-slate-400">
+                        Anda sedang mengedit dalam mode kode HTML langsung. Anda dapat menempelkan sintaks HTML kustom dari dokumen eksternal.
+                      </p>
+                    </div>
+                  )}
+
+                  {qEditorTab === 'preview' && (
+                    <div className="bg-slate-50 border border-indigo-100 p-4 sm:p-5 rounded-2xl shadow-2xs space-y-4 w-full">
+                      <div className="flex items-center justify-between border-b border-indigo-100/80 pb-2.5">
+                        <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                          Simulasi Tampilan Butir Soal di Layar Ujian Siswa:
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-500">
+                          Preset Font: {qFontPreset}
+                        </span>
+                      </div>
+
+                      {/* Rendered Stimulus Box */}
+                      <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs leading-relaxed text-sm">
+                        {qText && qText.replace(/<[^>]*>/g, '').trim() !== '' ? (
+                          renderFormattedText(qText, qFontPreset)
+                        ) : (
+                          <span className="text-slate-400 italic text-xs">Belum ada konten stimulus yang dituliskan...</span>
+                        )}
+                      </div>
+
+                      {/* Media Preview if attached */}
+                      {qMediaType !== 'None' && qMediaUrl && (
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 text-center">
+                          <span className="text-[10px] font-bold text-slate-400 block mb-1">Pratinjau Media Lampiran:</span>
+                          {qMediaType === 'Image' && (
+                            <img src={qMediaUrl} alt="Stimulus" className="max-h-48 mx-auto rounded-lg object-contain border" />
+                          )}
+                          {qMediaType === 'Video' && (
+                            <div className="text-xs text-indigo-600 font-mono">🎥 Media Video Tersemat: {qMediaUrl}</div>
+                          )}
+                          {qMediaType === 'Audio' && (
+                            <div className="text-xs text-indigo-600 font-mono">🔊 Media Audio Listening Tersemat: {qMediaUrl}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Word, Character and Statistics Footer */}
+                  <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 px-1 pt-1 border-t border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <span>Jumlah Kata: <strong className="text-slate-700 font-extrabold">{qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() ? qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().split(' ').length : 0}</strong></span>
+                      <span>•</span>
+                      <span>Karakter: <strong className="text-slate-700 font-extrabold">{qText.replace(/<[^>]*>/g, '').length}</strong></span>
+                      <span>•</span>
+                      <span>Estimasi Baca: <strong className="text-indigo-600 font-extrabold">~{Math.max(5, Math.ceil(((qText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().split(' ').length || 1) / 180) * 60))} dtk</strong></span>
+                    </div>
+
+                    {qText && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm('Bersihkan isi pertanyaan / stimulus soal ini?')) {
+                            setQText('');
+                          }
+                        }}
+                        className="text-red-500 hover:text-red-700 hover:underline cursor-pointer flex items-center gap-1 font-semibold"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Bersihkan Editor
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -10558,8 +10613,7 @@ export default function TeacherPanel({
                               'align',
                               'list', 'indent',
                               'blockquote', 'code-block',
-                              'link', 'image',
-                              'style', 'class', 'data-align', 'data-caption', 'width', 'height'
+                              'link', 'image'
                             ]}
                             className="min-h-[350px]"
                             placeholder="Tulis stimulus teks secara lengkap di sini..."
@@ -10597,56 +10651,44 @@ export default function TeacherPanel({
                   </div>
                 )}
 
-                {/* PILIHAN MEDIA & BOBOT SKOR (NEW) */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-3.5 bg-slate-100/50 rounded-xl border border-slate-200/50">
-                  <div>
-                    <label className="block text-xs font-bold mb-1 text-slate-700">Sematkan Media</label>
+                {/* PILIHAN MEDIA & LAMPIRAN TAMBAHAN (COMPACT) */}
+                <div className="flex flex-wrap items-center gap-3 p-2.5 bg-slate-50/80 rounded-xl border border-slate-200/70 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-600 text-[11px] uppercase tracking-wide">Media:</span>
                     <select
                       value={qMediaType}
                       onChange={(e) => setQMediaType(e.target.value as 'Image' | 'Video' | 'Audio' | 'None')}
-                      className="w-full px-3 py-1.5 border border-slate-200 bg-white rounded-lg text-xs font-semibold focus:outline-hidden"
+                      className="px-2.5 py-1 border border-slate-200 bg-white rounded-lg text-xs font-semibold focus:outline-hidden"
                     >
                       <option value="None">Tanpa Media (Teks Saja)</option>
                       <option value="Image">🖼️ Gambar / Ilustrasi</option>
                       <option value="Video">🎥 Video Pembelajaran</option>
-                      <option value="Audio">🔊 Audio / Suara / Listening</option>
+                      <option value="Audio">🔊 Audio / Listening</option>
                     </select>
                   </div>
 
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-bold mb-1 text-slate-700">Tautan / URL Media {qMediaType !== 'None' && '*'}</label>
-                    <input
-                      type="url"
-                      disabled={qMediaType === 'None'}
-                      placeholder={
-                        qMediaType === 'None'
-                          ? "Pilih opsi media terlebih dahulu..."
-                          : qMediaType === 'Image'
-                          ? "https://contoh.com/gambar.jpg"
-                          : qMediaType === 'Video'
-                          ? "https://youtube.com/embed/... atau .mp4"
-                          : "https://contoh.com/audio.mp3"
-                      }
-                      required={qMediaType !== 'None'}
-                      value={qMediaUrl}
-                      onChange={(e) => setQMediaUrl(e.target.value)}
-                      className="w-full px-3 py-1.5 border border-slate-200 bg-white rounded-lg text-xs font-mono disabled:bg-slate-50 disabled:text-slate-400 focus:outline-hidden"
-                    />
-                  </div>
+                  {qMediaType !== 'None' && (
+                    <div className="flex-1 min-w-[200px] flex items-center gap-2">
+                      <input
+                        type="url"
+                        placeholder={
+                          qMediaType === 'Image'
+                            ? "https://contoh.com/gambar.jpg"
+                            : qMediaType === 'Video'
+                            ? "https://youtube.com/embed/... atau .mp4"
+                            : "https://contoh.com/audio.mp3"
+                        }
+                        required
+                        value={qMediaUrl}
+                        onChange={(e) => setQMediaUrl(e.target.value)}
+                        className="flex-1 px-3 py-1 border border-slate-200 bg-white rounded-lg text-xs font-mono focus:outline-hidden"
+                      />
+                    </div>
+                  )}
 
-                  <div>
-                    <label className="block text-xs font-bold mb-1 text-slate-700">Bobot Skor Soal *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      min="0.1"
-                      placeholder="Contoh: 10 atau 2.5"
-                      value={qScore}
-                      onChange={(e) => setQScore(Number(e.target.value))}
-                      className="w-full px-3 py-1.5 border border-slate-200 bg-white rounded-lg text-xs font-bold focus:outline-hidden text-indigo-700"
-                    />
-                    <p className="text-[9px] text-slate-400 mt-1 leading-tight">Bisa berupa angka desimal (e.g., 2.5), genap, atau ganjil sesuai bobot kesulitan.</p>
+                  <div className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
+                    <span>Bobot Soal:</span>
+                    <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">{qScore} Poin</span>
                   </div>
                 </div>
 
@@ -10902,95 +10944,107 @@ export default function TeacherPanel({
             </div>
             {/* END LEFT COLUMN */}
 
-            {/* RIGHT COLUMN: Nav & Review */}
-            <div className="xl:col-span-4 space-y-6 lg:space-y-8">
-              <div className="lg:sticky lg:top-24 space-y-6 lg:space-y-8 max-h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
-                {/* Question Navigation / Progress */}
-                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 shadow-sm">
-                  <div className="flex justify-between items-center mb-4">
-                    <h4 className="font-extrabold text-slate-800 text-sm">Progress Rencana Soal</h4>
-                    <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg">
-                      {examQuestions.length} / {targetQuestionCount} Terisi
-                    </span>
+            {/* RIGHT COLUMN: Nav & Review (NARROWED & COMPACT) */}
+            {isSidebarVisible && (
+              <div className="xl:col-span-3 2xl:col-span-3 space-y-4">
+                <div className="lg:sticky lg:top-20 space-y-4 max-h-[calc(100vh-6rem)] overflow-y-auto custom-scrollbar">
+                  {/* Question Navigation / Progress */}
+                  <div className="bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs">
+                    <div className="flex justify-between items-center mb-2.5">
+                      <h4 className="font-extrabold text-slate-800 text-xs">Progress Rencana Soal</h4>
+                      <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">
+                        {examQuestions.length} / {targetQuestionCount} Terisi
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                      {Array.from({ length: Math.max(targetQuestionCount, examQuestions.length) }).map((_, idx) => {
+                        const isFilled = idx < examQuestions.length;
+                        return (
+                          <div 
+                            key={idx}
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold transition-all ${
+                              isFilled ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-400'
+                            }`}
+                            title={isFilled ? `Soal #${idx + 1} Terisi` : `Slot Soal #${idx + 1} Kosong`}
+                          >
+                            {idx + 1}
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {Array.from({ length: Math.max(targetQuestionCount, examQuestions.length) }).map((_, idx) => {
-                      const isFilled = idx < examQuestions.length;
-                      return (
-                        <div 
-                          key={idx}
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold transition-all ${
-                            isFilled ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white border border-slate-300 text-slate-400'
-                          }`}
-                          title={isFilled ? `Soal #${idx + 1} Terisi` : `Slot Soal #${idx + 1} Kosong`}
-                        >
-                          {idx + 1}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
 
-                {/* QUESTIONS LIST REVIEW */}
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/50 p-6 sm:p-8 flex flex-col relative overflow-hidden" style={{ maxHeight: 'calc(100vh - 350px)' }}>
-                  <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-400 to-orange-500" />
-                  <h4 className="font-black text-slate-900 text-sm tracking-widest uppercase mb-4 shrink-0 mt-2 flex items-center gap-2">
-                    <Database className="w-4 h-4 text-amber-500" /> Daftar Soal Terbuat ({examQuestions.length} Butir)
-                  </h4>
-                  
-                  <div className="flex-1 overflow-y-auto pr-2 space-y-3">
-                    {examQuestions.length === 0 ? (
-                      <div className="text-center py-10 border border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center h-full">
-                        <Database className="w-10 h-10 text-slate-300 mb-3" />
-                        <p className="text-sm font-medium text-slate-500">Belum ada soal dimasukkan.</p>
-                        <p className="text-xs text-slate-400 mt-1">Gunakan Editor Butir Soal untuk mengisi.</p>
-                      </div>
-                    ) : (
-                      examQuestions.map((q, idx) => (
-                        <div key={q.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex justify-between items-start gap-4 hover:border-indigo-100 transition">
-                          <div className="text-xs space-y-2 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md text-[10px]">
-                                Soal #{idx + 1} ({q.type})
-                              </span>
-                              <span className="bg-emerald-50 text-emerald-700 font-bold px-2 py-1 rounded-md text-[10px]">
-                                Bobot: {q.score !== undefined ? q.score : 10}
-                              </span>
-                              {q.mediaType && q.mediaType !== 'None' && (
-                                <span className="bg-amber-50 text-amber-700 font-bold px-2 py-1 rounded-md text-[10px] flex items-center gap-1">
-                                  {q.mediaType === 'Image' ? '🖼️' : q.mediaType === 'Video' ? '🎥' : '🔊'} {q.mediaType}
-                                </span>
-                              )}
-                            </div>
-                            <div className="font-medium text-slate-900 leading-relaxed text-[13px]">
-                              {renderFormattedText(q.questionText, q.fontPreset)}
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleEditQuestion(idx)}
-                              className="text-amber-500 hover:text-amber-700 p-1.5 hover:bg-amber-50 rounded-lg transition"
-                              title="Edit Soal"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveQuestion(idx)}
-                              className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition"
-                              title="Hapus Soal"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                  {/* QUESTIONS LIST REVIEW */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5 sm:p-4 flex flex-col relative overflow-hidden" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 to-orange-500" />
+                    <div className="flex items-center justify-between mb-3 shrink-0 mt-1">
+                      <h4 className="font-black text-slate-900 text-xs tracking-wider uppercase flex items-center gap-1.5">
+                        <Database className="w-3.5 h-3.5 text-amber-500" /> Daftar Soal ({examQuestions.length})
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setIsSidebarVisible(false)}
+                        className="text-[10px] text-slate-400 hover:text-slate-600 font-bold px-1.5 py-0.5 rounded hover:bg-slate-100 cursor-pointer"
+                        title="Sembunyikan Sidebar agar Editor Makin Luas"
+                      >
+                        Tutup ✕
+                      </button>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 custom-scrollbar">
+                      {examQuestions.length === 0 ? (
+                        <div className="text-center py-8 border border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center">
+                          <Database className="w-8 h-8 text-slate-300 mb-2" />
+                          <p className="text-xs font-semibold text-slate-600">Belum ada soal dimasukkan.</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">Gunakan Editor Butir Soal untuk mengisi.</p>
                         </div>
-                      ))
-                    )}
+                      ) : (
+                        examQuestions.map((q, idx) => (
+                          <div key={q.id} className="p-3 bg-slate-50/80 border border-slate-200/80 rounded-xl flex justify-between items-start gap-2.5 hover:border-indigo-200 hover:bg-indigo-50/30 transition">
+                            <div className="text-xs space-y-1.5 flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded text-[10px] border border-indigo-100">
+                                  #{idx + 1} {q.type}
+                                </span>
+                                <span className="bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 rounded text-[10px] border border-emerald-100">
+                                  {q.score !== undefined ? q.score : 10}p
+                                </span>
+                                {q.mediaType && q.mediaType !== 'None' && (
+                                  <span className="bg-amber-50 text-amber-700 font-bold px-1.5 py-0.5 rounded text-[10px]">
+                                    {q.mediaType === 'Image' ? '🖼️' : q.mediaType === 'Video' ? '🎥' : '🔊'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="font-medium text-slate-800 leading-snug text-xs line-clamp-3">
+                                {renderFormattedText(q.questionText, q.fontPreset)}
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleEditQuestion(idx)}
+                                className="text-amber-600 hover:text-amber-800 p-1 hover:bg-amber-50 rounded-md transition cursor-pointer"
+                                title="Edit Soal"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveQuestion(idx)}
+                                className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded-md transition cursor-pointer"
+                                title="Hapus Soal"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             </div>
           </div>

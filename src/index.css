@@ -225,20 +225,25 @@ body {
 
 /* Question Editor Specific Quill wrapper */
 .question-quill-editor .ql-container {
-  min-height: 180px;
-  max-height: 420px;
+  min-height: 240px;
+  max-height: 560px;
   overflow-y: auto;
-  font-size: 0.925rem;
+  font-size: 0.95rem;
 }
 .question-quill-editor .ql-editor {
-  min-height: 170px;
-  line-height: 1.7;
+  min-height: 230px;
+  line-height: 1.75;
+  padding: 1rem 1.25rem !important;
 }
 .question-quill-editor .ql-toolbar {
-  border-color: #cbd5e1 !important;
+  border-color: #e2e8f0 !important;
   background-color: #f8fafc !important;
-  padding: 0.5rem !important;
+  padding: 0.6rem 0.8rem !important;
+  border-top-left-radius: 0.875rem;
+  border-top-right-radius: 0.875rem;
 }
 .question-quill-editor .ql-container.ql-snow {
-  border-color: #cbd5e1 !important;
+  border-color: #e2e8f0 !important;
+  border-bottom-left-radius: 0.875rem;
+  border-bottom-right-radius: 0.875rem;
 }
