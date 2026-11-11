@@ -78,6 +78,7 @@ export interface SchoolIdentityConfig {
 }
 
 interface TeacherPanelProps {
+  key?: React.Key;
   currentTeacher: Teacher;
   classes: ClassItem[];
   subjects: SubjectItem[];
@@ -291,6 +292,12 @@ export default function TeacherPanel({
     if (gA.level !== gB.level) return gA.level - gB.level;
     return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
   });
+
+  const teacherSubjectObj = subjects.find(s => 
+    s.name.toLowerCase() === (currentTeacher.subject || '').toLowerCase() || 
+    s.id === currentTeacher.subject
+  );
+  const teacherSubjectId = teacherSubjectObj?.id;
 
   const [activeTab, setActiveTab] = useState<'journal' | 'materials' | 'teaching_modules' | 'exams' | 'bank_soal' | 'daftar_nilai' | 'profile' | 'announcements' | 'cheatlogs' | 'konseling' | 'inbox' | 'assignments'>('journal');
   const [inboxFilter, setInboxFilter] = useState<'All' | 'Pending' | 'Accepted' | 'Rejected'>('All');
@@ -700,6 +707,20 @@ export default function TeacherPanel({
   const [attendance, setAttendance] = useState<{ [studentId: string]: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' }>({});
   const [journalSuccessMessage, setJournalSuccessMessage] = useState('');
 
+  useEffect(() => {
+    if (teacherSubjectId && (!journalSubject || !editingJournalId)) {
+      setJournalSubject(teacherSubjectId);
+    }
+  }, [teacherSubjectId, editingJournalId]);
+
+  useEffect(() => {
+    setSelectedClassForGrades('');
+    setSelectedExamForGrades('');
+    setSelectedManualAssessment('');
+    setShowManualAssessmentForm(false);
+    setCurrentFolderId(null);
+  }, [currentTeacher.id]);
+
   // Recap filter states
   const [recapFilterDate, setRecapFilterDate] = useState(new Date().toISOString().split('T')[0]);
   const [recapFilterMonth, setRecapFilterMonth] = useState(new Date().toISOString().slice(0, 7)); // e.g. "2026-07"
@@ -811,6 +832,9 @@ export default function TeacherPanel({
     setJournalObjectives('');
     setJournalNotes('');
     setEditingJournalId(null);
+    if (teacherSubjectId) {
+      setJournalSubject(teacherSubjectId);
+    }
   };
 
   const getAbsentStudentDetails = (entry: JournalEntry) => {
@@ -1449,11 +1473,12 @@ export default function TeacherPanel({
   const handleRenameItemSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!showRenameModal || !showRenameModal.name.trim()) return;
-    const mod = teachingModules.find(m => m.id === showRenameModal.id);
+    const mod = (teachingModules || []).find(m => m.id === showRenameModal.id);
     if (mod) {
       onUpdateTeachingModule?.({
         ...mod,
-        title: showRenameModal.name
+        title: showRenameModal.name,
+        teacherId: mod.teacherId || currentTeacher.id
       });
       toast.success('Berhasil diganti nama!');
     }
@@ -1462,11 +1487,12 @@ export default function TeacherPanel({
 
   const handlePaste = () => {
     if (!clipboard) return;
-    const modToMove = teachingModules.find(m => m.id === clipboard.id);
+    const modToMove = (teachingModules || []).find(m => m.id === clipboard.id);
     if (modToMove) {
       onUpdateTeachingModule?.({
         ...modToMove,
-        parentId: currentFolderId
+        parentId: currentFolderId,
+        teacherId: modToMove.teacherId || currentTeacher.id
       });
       toast.success('Berhasil dipindah!');
     }
@@ -1498,7 +1524,7 @@ export default function TeacherPanel({
       const zip = new JSZip();
       
       const addFilesToZip = async (currentFolderId: string, currentZipFolder: JSZip) => {
-        const children = (teachingModules || []).filter(m => m.parentId === currentFolderId);
+        const children = teacherTeachingModules.filter(m => m.parentId === currentFolderId);
         for (const child of children) {
           if (child.type === 'folder') {
             const newZipFolder = currentZipFolder.folder(child.title);
@@ -1647,13 +1673,14 @@ export default function TeacherPanel({
       };
       reader.readAsDataURL(moduleFile);
     } else if (editingModuleId && onUpdateTeachingModule) {
-      const existing = teachingModules.find(m => m.id === editingModuleId);
+      const existing = (teachingModules || []).find(m => m.id === editingModuleId);
       if (existing) {
         onUpdateTeachingModule({
           ...existing,
           title: moduleTitle,
           classId: moduleClassId,
           subjectId: moduleSubjectId,
+          teacherId: existing.teacherId || currentTeacher.id,
         });
         toast.success('Perangkat Pembelajaran berhasil diperbarui!');
         setShowModuleModal(false);
@@ -1765,6 +1792,7 @@ export default function TeacherPanel({
           fileType: materiType,
           fileUrl: materiType === 'Article' ? '' : materiUrl,
           content: materiType === 'Article' ? materiContent : undefined,
+          teacherId: existing.teacherId || currentTeacher.id,
         });
       }
     } else {
@@ -2058,6 +2086,7 @@ export default function TeacherPanel({
         ...editingManualAssessment,
         title: manualTitle,
         subjectId: manualSubjectId,
+        teacherId: editingManualAssessment.teacherId || currentTeacher.id,
         type: manualType,
         date: manualDate,
         criteriaNames: manualCriteria,
@@ -2783,7 +2812,8 @@ export default function TeacherPanel({
           token: examToken.toUpperCase(),
           durationMinutes: Number(examDuration),
           questions: examQuestions,
-          showScoreToStudent: showScoreToStudent
+          showScoreToStudent: showScoreToStudent,
+          teacherId: existingExam.teacherId || currentTeacher.id
         });
         toast('Paket ujian berhasil diperbarui!');
       }
@@ -2948,29 +2978,46 @@ export default function TeacherPanel({
     return (a.studentName || '').localeCompare(b.studentName || '');
   };
 
-  // Filters for Teacher's own content (strictly by teacher ID or matching subject)
-  const teacherSubjectObj = subjects.find(s => 
-    s.name.toLowerCase() === (currentTeacher.subject || '').toLowerCase() || 
-    s.id === currentTeacher.subject
-  );
-  const teacherSubjectId = teacherSubjectObj?.id;
+  // Strict isolation check: items must strictly belong to the current teacher room
+  const isMyItem = (item: { teacherId?: string; subjectId?: string; teacherName?: string } | null | undefined): boolean => {
+    if (!item) return false;
 
-  const isMyItem = (item: { teacherId?: string; subjectId?: string }) => {
-    if (item.teacherId && item.teacherId === currentTeacher.id) return true;
-    if (item.subjectId) {
-      if (teacherSubjectId && item.subjectId === teacherSubjectId) return true;
-      const subjName = subjects.find(s => s.id === item.subjectId)?.name || '';
-      if (subjName && currentTeacher.subject && subjName.toLowerCase() === currentTeacher.subject.toLowerCase()) return true;
+    // 1. PRIMARY & STRICT: If item has teacherId, it MUST strictly match currentTeacher.id
+    if (item.teacherId) {
+      return String(item.teacherId).trim() === String(currentTeacher.id).trim();
     }
-    if (!item.teacherId) return true;
+
+    // 2. FALLBACK for legacy items lacking teacherId: match by teacherName if present
+    if (item.teacherName && currentTeacher.name) {
+      return item.teacherName.trim().toLowerCase() === currentTeacher.name.trim().toLowerCase();
+    }
+
+    // 3. FALLBACK for legacy seed items that only had subjectId and NO teacherId:
+    // Only associate if the subject strictly matches this teacher's subject
+    // AND currentTeacher is the primary/only teacher with this subject
+    if (item.subjectId && currentTeacher.subject) {
+      const isSubjMatch = (teacherSubjectId && item.subjectId === teacherSubjectId) ||
+        (subjects.find(s => s.id === item.subjectId)?.name.toLowerCase() === currentTeacher.subject.toLowerCase());
+      if (isSubjMatch) {
+        const sameSubjectTeachers = (teachers || []).filter(t => 
+          (t.subject && currentTeacher.subject && t.subject.toLowerCase() === currentTeacher.subject.toLowerCase()) ||
+          t.subject === teacherSubjectId
+        );
+        if (sameSubjectTeachers.length <= 1 || sameSubjectTeachers[0]?.id === currentTeacher.id) {
+          return true;
+        }
+      }
+    }
+
     return false;
   };
 
-  const teacherMaterials = materials.filter(m => m.teacherId === currentTeacher.id || isMyItem(m));
+  const teacherMaterials = materials.filter(m => isMyItem(m));
+  const teacherTeachingModules = (teachingModules || []).filter(m => isMyItem(m));
   const teacherExams = exams.filter(e => isMyItem(e));
-  const teacherQuestionBanks = questionBanks.filter(qb => qb.teacherId === currentTeacher.id || isMyItem(qb));
+  const teacherQuestionBanks = questionBanks.filter(qb => isMyItem(qb));
   const teacherManualAssessments = (manualAssessments || []).filter(m => isMyItem(m));
-  const teacherJournals = (journals || []).filter(j => j.teacherId === currentTeacher.id || isMyItem(j));
+  const teacherJournals = (journals || []).filter(j => isMyItem(j));
   const teacherSubmissions = submissions.filter(s => teacherExams.some(e => e.id === s.examId));
   const teacherExamTitles = teacherExams.map(e => e.title);
   const teacherCheatLogs = (cheatLogs || []).filter(log => {
@@ -2978,8 +3025,6 @@ export default function TeacherPanel({
     if (log.teacherId && log.teacherId === currentTeacher.id) return true;
     if (log.examId && teacherExams.some(e => e.id === log.examId)) return true;
     if (log.examTitle && teacherExamTitles.some(t => t && t.toLowerCase().trim() === log.examTitle.toLowerCase().trim())) return true;
-    if (log.subjectId && teacherSubjectId && log.subjectId === teacherSubjectId) return true;
-    if (currentTeacher.subject && log.examTitle && log.examTitle.toLowerCase().includes(currentTeacher.subject.toLowerCase())) return true;
     return false;
   });
 
@@ -3825,6 +3870,16 @@ export default function TeacherPanel({
             >
               📊 Daftar Nilai
             </button>
+          </div>
+
+          {/* ROOM GURU MAPEL INDICATOR */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/90 rounded-xl border border-slate-700/80 text-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="text-slate-400 text-[11px] hidden sm:inline">Ruang Mandiri:</span>
+            <span className="font-extrabold text-amber-300 text-xs truncate max-w-[190px]">{currentTeacher.name}</span>
+            <span className="bg-amber-400/20 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded-md border border-amber-400/30 whitespace-nowrap">
+              Mapel: {currentTeacher.subject || 'Spesifik Guru'}
+            </span>
           </div>
         </div>
       )}
@@ -4995,7 +5050,7 @@ export default function TeacherPanel({
               {currentFolderId && (
                 <button
                   onClick={() => {
-                    const currentFolder = teachingModules.find(m => m.id === currentFolderId);
+                    const currentFolder = teacherTeachingModules.find(m => m.id === currentFolderId);
                     setCurrentFolderId(currentFolder?.parentId || null);
                   }}
                   className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg flex items-center gap-1 cursor-pointer"
@@ -5031,15 +5086,15 @@ export default function TeacherPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
-                {teachingModules.filter(m => m.teacherId === currentTeacher.id && (m.parentId || null) === currentFolderId).length === 0 ? (
+                {teacherTeachingModules.filter(m => (m.parentId || null) === currentFolderId).length === 0 ? (
                   <tr>
                     <td colSpan={5} className="p-10 text-center text-slate-400">
                       Belum ada folder atau perangkat pembelajaran di sini.
                     </td>
                   </tr>
                 ) : (
-                  teachingModules
-                    .filter(m => m.teacherId === currentTeacher.id && (m.parentId || null) === currentFolderId)
+                  teacherTeachingModules
+                    .filter(m => (m.parentId || null) === currentFolderId)
                     .sort((a, b) => {
                       if (a.type === 'folder' && b.type !== 'folder') return -1;
                       if (a.type !== 'folder' && b.type === 'folder') return 1;

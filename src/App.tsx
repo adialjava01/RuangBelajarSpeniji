@@ -1576,6 +1576,7 @@ export default function App() {
             {/* TEACHER PANEL MOUNTED */}
             {currentRole === 'Teacher' && activeUser && (
               <TeacherPanel
+                key={activeUser.id}
                 currentTeacher={activeUser}
                 classes={sortedClasses}
                 subjects={subjects}
