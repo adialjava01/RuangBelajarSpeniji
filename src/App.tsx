@@ -1631,6 +1631,7 @@ export default function App() {
                 onSaveAssignmentFolder={handleSaveAssignmentFolder}
                 onUpdateAssignmentFolder={handleUpdateAssignmentFolder}
                 onDeleteAssignmentFolder={handleDeleteAssignmentFolder}
+                onSaveAssignmentSubmission={handleSaveAssignmentSubmission}
                 onUpdateAssignmentSubmission={handleUpdateAssignmentSubmission}
                 onDeleteAssignmentSubmission={handleDeleteAssignmentSubmission}
                 livePresentation={livePresentation}

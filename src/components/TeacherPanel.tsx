@@ -133,6 +133,7 @@ interface TeacherPanelProps {
   onSaveAssignmentFolder?: (folder: Omit<AssignmentFolder, 'id' | 'createdAt'>) => void;
   onUpdateAssignmentFolder?: (folder: AssignmentFolder) => void;
   onDeleteAssignmentFolder?: (id: string) => void;
+  onSaveAssignmentSubmission?: (sub: Omit<AssignmentSubmission, 'id' | 'submittedAt'>) => void;
   onUpdateAssignmentSubmission?: (sub: AssignmentSubmission) => void;
   onDeleteAssignmentSubmission?: (id: string) => void;
   livePresentation?: LivePresentationSession;
@@ -258,6 +259,7 @@ export default function TeacherPanel({
   onSaveAssignmentFolder,
   onUpdateAssignmentFolder,
   onDeleteAssignmentFolder,
+  onSaveAssignmentSubmission,
   onUpdateAssignmentSubmission,
   onDeleteAssignmentSubmission,
   livePresentation,
@@ -323,6 +325,10 @@ export default function TeacherPanel({
   // Student Submissions Inspection State
   const [selectedSubmissionsAssign, setSelectedSubmissionsAssign] = useState<AssignmentFolder | null>(null);
   const [feedbackGradeInput, setFeedbackGradeInput] = useState<Record<string, { grade: number; feedback: string }>>({});
+  const [submissionsFilter, setSubmissionsFilter] = useState<'all' | 'submitted' | 'unsubmitted' | 'graded' | 'ungraded'>('all');
+  const [submissionsSearch, setSubmissionsSearch] = useState<string>('');
+  const [showMassGradeBox, setShowMassGradeBox] = useState<boolean>(false);
+  const [massGradeVal, setMassGradeVal] = useState<number>(85);
 
   // Live Presentation Lab Sync State for Teacher
   const [activeLiveMaterial, setActiveLiveMaterial] = useState<Material | null>(null);
@@ -1030,14 +1036,14 @@ export default function TeacherPanel({
 
       return `
         <tr>
-          <td style="text-align:center;">${idx + 1}</td>
-          <td style="white-space:nowrap;"><b>${hari}</b><br/>${formattedDate}</td>
-          <td style="text-align:center;">${jamStr}</td>
-          <td><b>${cls}</b><br/><span style="color:#475569;">${subj}</span></td>
-          <td><b>${j.topic}</b>${j.learningObjectives ? `<br/><small style="color:#64748b;">TP: ${j.learningObjectives}</small>` : ''}</td>
-          <td style="text-align:center;font-family:monospace;font-weight:bold;">${hadir}H / ${sakitNames.length}S / ${izinNames.length}I / ${alpaNames.length}A</td>
-          <td style="font-size:11px;">${absenHtml}</td>
-          <td style="font-size:11px;">${j.notes || '-'}</td>
+          <td style="text-align:center;font-weight:bold;">${idx + 1}</td>
+          <td style="white-space:nowrap;text-align:center;font-size:11px;"><b>${hari}</b><br/>${formattedDate}</td>
+          <td style="text-align:center;font-size:11px;white-space:nowrap;">${jamStr}</td>
+          <td style="font-size:11px;line-height:1.2;"><b>${cls}</b><br/><span style="color:#475569;">${subj}</span></td>
+          <td style="font-size:11.5px;line-height:1.35;"><b>${j.topic}</b>${j.learningObjectives ? `<br/><small style="color:#475569;display:block;margin-top:2px;">TP: ${j.learningObjectives}</small>` : ''}</td>
+          <td style="text-align:center;font-family:monospace;font-weight:bold;font-size:10px;white-space:nowrap;">${hadir}H / ${sakitNames.length}S / ${izinNames.length}I / ${alpaNames.length}A</td>
+          <td style="font-size:10px;line-height:1.2;">${absenHtml}</td>
+          <td style="font-size:10.5px;line-height:1.2;">${j.notes || '-'}</td>
         </tr>
       `;
     }).join('');
@@ -1090,14 +1096,14 @@ export default function TeacherPanel({
         <table>
           <thead>
             <tr>
-              <th style="width:30px;text-align:center;">No</th>
-              <th style="width:110px;">Hari & Tanggal</th>
-              <th style="width:85px;text-align:center;">Jam Ke</th>
-              <th style="width:140px;">Kelas & Mapel</th>
-              <th>Topik & Capaian Pembelajaran</th>
-              <th style="width:110px;text-align:center;">Presensi</th>
-              <th style="width:200px;">Siswa Tidak Hadir</th>
-              <th style="width:150px;">Catatan KBM</th>
+              <th style="width:28px;text-align:center;">No</th>
+              <th style="width:85px;text-align:center;white-space:nowrap;">Hari & Tanggal</th>
+              <th style="width:65px;text-align:center;white-space:nowrap;">Jam Ke</th>
+              <th style="width:105px;">Kelas & Mapel</th>
+              <th style="min-width:260px;">Topik & Capaian Pembelajaran</th>
+              <th style="width:85px;text-align:center;white-space:nowrap;">Presensi</th>
+              <th style="width:130px;">Siswa Tidak Hadir</th>
+              <th style="width:95px;">Catatan KBM</th>
             </tr>
           </thead>
           <tbody>
@@ -1862,10 +1868,13 @@ export default function TeacherPanel({
   const [manualTitle, setManualTitle] = useState('');
   const [manualSubjectId, setManualSubjectId] = useState('');
   const [manualType, setManualType] = useState('Praktikum');
+  const [isCustomManualType, setIsCustomManualType] = useState(false);
+  const [customManualTypeInput, setCustomManualTypeInput] = useState('');
   const [manualDate, setManualDate] = useState('');
   const [manualGrades, setManualGrades] = useState<ManualGrade[]>([]);
   const [manualCriteria, setManualCriteria] = useState<string[]>([]);
   const [newCriteriaInput, setNewCriteriaInput] = useState('');
+  const excelManualImportRef = useRef<HTMLInputElement>(null);
 
   // --- 4.7. PENILAIAN & KOREKSI SOAL URAIAN STATE ---
   const [selectedSubmissionForGrading, setSelectedSubmissionForGrading] = useState<ExamSubmission | null>(null);
@@ -2035,7 +2044,16 @@ export default function TeacherPanel({
       setEditingManualAssessment(assessment);
       setManualTitle(assessment.title);
       setManualSubjectId(assessment.subjectId);
-      setManualType(assessment.type);
+      const standardPresets = ['Praktikum', 'Tugas Kelompok', 'Presentasi', 'Proyek'];
+      if (standardPresets.includes(assessment.type)) {
+        setManualType(assessment.type);
+        setIsCustomManualType(false);
+        setCustomManualTypeInput('');
+      } else {
+        setManualType('__CUSTOM__');
+        setIsCustomManualType(true);
+        setCustomManualTypeInput(assessment.type || '');
+      }
       setManualDate(assessment.date);
       setManualGrades(assessment.grades || []);
       setManualCriteria(assessment.criteriaNames || []);
@@ -2048,6 +2066,8 @@ export default function TeacherPanel({
       );
       setManualSubjectId(mySubjectObj?.id || (subjects.length > 0 ? subjects[0].id : ''));
       setManualType('Praktikum');
+      setIsCustomManualType(false);
+      setCustomManualTypeInput('');
       setManualDate(new Date().toISOString().split('T')[0]);
       setManualCriteria([]);
       
@@ -2076,8 +2096,9 @@ export default function TeacherPanel({
   };
 
   const handleSaveManual = () => {
-    if (!manualTitle || !manualSubjectId || !manualDate) {
-      toast.error('Mohon lengkapi judul, mapel, dan tanggal.');
+    const finalType = isCustomManualType ? customManualTypeInput.trim() : manualType;
+    if (!manualTitle || !manualSubjectId || !manualDate || !finalType) {
+      toast.error('Mohon lengkapi judul, mapel, tanggal, dan jenis penilaian.');
       return;
     }
     
@@ -2087,7 +2108,7 @@ export default function TeacherPanel({
         title: manualTitle,
         subjectId: manualSubjectId,
         teacherId: editingManualAssessment.teacherId || currentTeacher.id,
-        type: manualType,
+        type: finalType,
         date: manualDate,
         criteriaNames: manualCriteria,
         grades: manualGrades
@@ -2100,7 +2121,7 @@ export default function TeacherPanel({
         subjectId: manualSubjectId,
         teacherId: currentTeacher.id,
         date: manualDate,
-        type: manualType,
+        type: finalType,
         criteriaNames: manualCriteria,
         grades: manualGrades
       });
@@ -2132,26 +2153,480 @@ export default function TeacherPanel({
     }));
   };
 
-  const handleSyncAssignmentToLeger = (assignmentItem: AssignmentFolder) => {
-    const targetClass = classes.find(c => c.id === assignmentItem.classId || c.name === assignmentItem.classId);
-    const classStudents = students.filter(s => s.className === targetClass?.name || s.classId === targetClass?.id || s.classId === assignmentItem.classId);
-    const taskSubs = (assignmentSubmissions || []).filter(s => s.assignmentFolderId === assignmentItem.id || s.assignmentId === assignmentItem.id);
+  const handleDownloadManualGradeTemplate = () => {
+    const targetClassObj = classes.find(c => c.id === selectedClassForGrades || c.name === selectedClassForGrades);
+    const className = targetClassObj ? targetClassObj.name : (selectedClassForGrades || 'Kelas');
+    const finalType = isCustomManualType ? (customManualTypeInput.trim() || 'Manual') : manualType;
 
-    if (taskSubs.length === 0) {
-      toast.error('Belum ada siswa yang mengumpulkan tugas ini.');
+    if (manualGrades.length === 0) {
+      toast.error('Tidak ada data siswa untuk kelas ini!');
       return;
     }
 
+    const rows = manualGrades.map((g, idx) => {
+      const baseRow: Record<string, any> = {
+        'No': idx + 1,
+        'NIS': g.studentNis || '',
+        'Nama Siswa': g.studentName,
+        'Nilai (0-100)': g.score !== undefined && g.score > 0 ? g.score : '',
+      };
+
+      manualCriteria.forEach(c => {
+        baseRow[`${c} (A-D)`] = g.criteriaGrades?.[c] || 'B';
+      });
+
+      baseRow['Catatan (Opsional)'] = g.notes || '';
+      return baseRow;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = [
+      { wch: 6 },
+      { wch: 14 },
+      { wch: 32 },
+      { wch: 16 },
+      ...manualCriteria.map(() => ({ wch: 16 })),
+      { wch: 30 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Input Nilai Siswa');
+    
+    const safeTitle = (manualTitle || finalType || 'Nilai').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+    XLSX.writeFile(workbook, `Template_Nilai_${className.replace(/\s+/g, '_')}_${safeTitle}.xlsx`);
+    toast.success(`Template Excel untuk kelas ${className} berhasil diunduh!`);
+  };
+
+  const handleImportManualGradesExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target?.result;
+        if (!data) return;
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          toast.error('File Excel tidak memiliki lembar kerja (sheet)!');
+          return;
+        }
+
+        // Determine best sheet
+        const targetClassObj = classes.find(c => c.id === selectedClassForGrades || c.name === selectedClassForGrades);
+        const className = (targetClassObj ? targetClassObj.name : selectedClassForGrades || '').toLowerCase().replace(/^kelas\s+/i, '').trim();
+
+        let targetSheetName = workbook.SheetNames[0];
+        if (workbook.SheetNames.length > 1) {
+          const foundSheet = workbook.SheetNames.find(sn => {
+            const snLower = sn.toLowerCase();
+            if (snLower.includes('nilai')) return true;
+            if (snLower.includes('leger')) return true;
+            if (className && snLower.replace(/^kelas\s+/i, '').trim().includes(className)) return true;
+            return false;
+          });
+          if (foundSheet) targetSheetName = foundSheet;
+        }
+
+        const worksheet = workbook.Sheets[targetSheetName];
+        if (!worksheet) {
+          toast.error('Gagal membaca sheet Excel!');
+          return;
+        }
+
+        const arrayData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+        if (!arrayData || arrayData.length === 0) {
+          toast.error('File Excel kosong!');
+          return;
+        }
+
+        // Robust header row finder: score candidate rows and pick the real header row
+        const findHeaderRowIndex = (arr: any[][]) => {
+          let bestIdx = 0;
+          let bestScore = -1;
+
+          arr.forEach((row, idx) => {
+            if (!Array.isArray(row)) return;
+            const filledCells = row.map(c => String(c || '').trim()).filter(Boolean);
+            if (filledCells.length < 2) return; // Skip title / banner rows with only 1 column
+
+            let score = 0;
+            filledCells.forEach(cell => {
+              const lower = cell.toLowerCase().trim();
+              if (/^(no|no\.|nomor|no\.?\s*urut|no\.?\s*absen)$/i.test(lower)) score += 3;
+              if (/^(nis|nisn|no\.?\s*induk|nomor\s*induk|id\s*siswa)$/i.test(lower)) score += 5;
+              if (/nama/i.test(lower)) score += 5;
+              if (/nilai|score|skor|angka|hasil/i.test(lower)) score += 4;
+              if (/catatan|keterangan/i.test(lower)) score += 2;
+            });
+
+            if (score > bestScore) {
+              bestScore = score;
+              bestIdx = idx;
+            }
+          });
+
+          return bestScore >= 3 ? bestIdx : 0;
+        };
+
+        const headerRowIdx = findHeaderRowIndex(arrayData);
+        const headers = arrayData[headerRowIdx].map((h: any) => String(h || '').trim());
+        const contentRows = arrayData.slice(headerRowIdx + 1);
+
+        if (contentRows.length === 0) {
+          toast.error('Tidak ada baris data siswa yang ditemukan di bawah judul kolom!');
+          return;
+        }
+
+        // Ensure base student list is populated
+        let baseGrades = manualGrades;
+        if (!baseGrades || baseGrades.length === 0) {
+          const classStudents = students
+            .filter(s => matchStudentClass(s, selectedClassForGrades))
+            .sort((a, b) => {
+              if (a.noAbsen != null && b.noAbsen != null) return a.noAbsen - b.noAbsen;
+              if (a.noAbsen != null) return -1;
+              if (b.noAbsen != null) return 1;
+              return a.name.localeCompare(b.name);
+            });
+          baseGrades = classStudents.map(s => ({
+            studentId: s.id,
+            studentName: s.name,
+            studentNis: s.nis,
+            score: 0,
+            criteriaGrades: {},
+            notes: ''
+          }));
+        }
+
+        const updatedGrades = [...baseGrades];
+
+        const normalizeName = (name: any) => {
+          return String(name || '')
+            .toLowerCase()
+            .replace(/^\d+[\.\-\s]+/, '')
+            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        };
+
+        let matchedCount = 0;
+        let updatedScoresCount = 0;
+
+        contentRows.forEach((r, rowIdx) => {
+          if (!Array.isArray(r) || r.every(cell => String(cell || '').trim() === '')) return;
+
+          const rowObj: Record<string, any> = {};
+          headers.forEach((h: string, idx: number) => {
+            if (h) rowObj[h] = r[idx] !== undefined ? r[idx] : '';
+          });
+          const keys = Object.keys(rowObj);
+
+          const findKeyVal = (patterns: RegExp[]) => {
+            const foundKey = keys.find(k => patterns.some(p => p.test(k.trim())));
+            return foundKey ? rowObj[foundKey] : undefined;
+          };
+
+          const nisVal = findKeyVal([
+            /^nis$/i,
+            /^nisn$/i,
+            /^no\.?\s*induk/i,
+            /^nomor\s*induk/i,
+            /^id\s*siswa/i,
+            /nis/i
+          ]);
+
+          const nameVal = findKeyVal([
+            /^nama\s*siswa$/i,
+            /^nama\s*lengkap$/i,
+            /^nama\s*peserta\s*didik$/i,
+            /^nama$/i,
+            /nama/i,
+            /student/i,
+            /peserta\s*didik/i
+          ]);
+
+          const noVal = findKeyVal([
+            /^no$/i,
+            /^no\.$/i,
+            /^nomor$/i,
+            /^no\.?\s*urut$/i,
+            /^no\.?\s*absen$/i
+          ]);
+
+          const scoreVal = findKeyVal([
+            /^nilai\s*\(0-100\)$/i,
+            /^nilai\s*angka$/i,
+            /^nilai$/i,
+            /^score$/i,
+            /^skor$/i,
+            /^angka$/i,
+            /^nilai\s*akhir$/i,
+            /^nilai\s*tugas$/i,
+            /^nilai\s*praktikum$/i,
+            /^praktikum$/i,
+            /^tugas$/i,
+            /^hasil$/i,
+            /nilai/i,
+            /score/i,
+            /skor/i
+          ]);
+
+          const notesVal = findKeyVal([
+            /^catatan\s*\(opsional\)$/i,
+            /^catatan$/i,
+            /^keterangan$/i,
+            /^notes$/i,
+            /catatan/i,
+            /keterangan/i
+          ]);
+
+          // Fallback score detection if not found by header name: check for a numeric cell between 0 and 100
+          let resolvedScoreVal = scoreVal;
+          if (resolvedScoreVal === undefined || String(resolvedScoreVal).trim() === '') {
+            for (const k of keys) {
+              if (/nama|nis|no|id|catatan|keterangan/i.test(k)) continue;
+              const val = rowObj[k];
+              if (val !== undefined && val !== '' && !isNaN(Number(String(val).replace(',', '.')))) {
+                const num = Number(String(val).replace(',', '.'));
+                if (num >= 0 && num <= 100) {
+                  resolvedScoreVal = val;
+                  break;
+                }
+              }
+            }
+          }
+
+          const cleanNis = nisVal !== undefined && nisVal !== null ? String(nisVal).replace(/[^\d]/g, '').trim() : '';
+          const rawNisStr = nisVal !== undefined && nisVal !== null ? String(nisVal).trim().toLowerCase() : '';
+          const cleanName = normalizeName(nameVal);
+          const noNum = noVal !== undefined && noVal !== null && !isNaN(Number(noVal)) ? Number(noVal) : null;
+
+          let targetIndex = -1;
+
+          // 1. Match by NIS
+          if (cleanNis) {
+            targetIndex = updatedGrades.findIndex(g => {
+              if (!g.studentNis) return false;
+              const gNisDigits = String(g.studentNis).replace(/[^\d]/g, '').trim();
+              if (gNisDigits && gNisDigits === cleanNis) return true;
+              if (String(g.studentNis).trim().toLowerCase() === rawNisStr) return true;
+              return false;
+            });
+          }
+
+          // 2. Match by Name if not matched by NIS
+          if (targetIndex === -1 && cleanName) {
+            targetIndex = updatedGrades.findIndex(g => {
+              if (!g.studentName) return false;
+              const gNorm = normalizeName(g.studentName);
+              if (!gNorm) return false;
+              if (gNorm === cleanName) return true;
+              if (gNorm.replace(/\s+/g, '') === cleanName.replace(/\s+/g, '')) return true;
+              if (gNorm.includes(cleanName) || cleanName.includes(gNorm)) return true;
+              // Word overlap matching
+              const gWords = gNorm.split(' ').filter(w => w.length >= 3);
+              const eWords = cleanName.split(' ').filter(w => w.length >= 3);
+              if (gWords.length > 0 && eWords.length > 0 && gWords.filter(gw => eWords.includes(gw)).length >= 2) return true;
+              return false;
+            });
+          }
+
+          // 3. Match by No Urut / No Absen if row order corresponds
+          if (targetIndex === -1 && noNum !== null && noNum >= 1 && noNum <= updatedGrades.length) {
+            const candidate = updatedGrades[noNum - 1];
+            if (candidate) {
+              if (!cleanName) {
+                targetIndex = noNum - 1;
+              } else {
+                const candNorm = normalizeName(candidate.studentName);
+                const candWords = candNorm.split(' ').filter(w => w.length >= 3);
+                const excelWords = cleanName.split(' ').filter(w => w.length >= 3);
+                if (candWords.some(cw => excelWords.some(ew => cw.includes(ew) || ew.includes(cw)))) {
+                  targetIndex = noNum - 1;
+                }
+              }
+            }
+          }
+
+          // 4. Sequential fallback if row count matches exactly and names have basic similarity
+          if (targetIndex === -1 && cleanName && contentRows.length === updatedGrades.length && rowIdx < updatedGrades.length) {
+            const candidate = updatedGrades[rowIdx];
+            const candNorm = normalizeName(candidate.studentName);
+            if (candNorm && (candNorm.slice(0, 4) === cleanName.slice(0, 4) || cleanName.includes(candNorm.slice(0, 4)))) {
+              targetIndex = rowIdx;
+            }
+          }
+
+          if (targetIndex !== -1) {
+            matchedCount++;
+            let parsedScore = updatedGrades[targetIndex].score;
+
+            if (resolvedScoreVal !== undefined && String(resolvedScoreVal).trim() !== '') {
+              const sanitizedScoreStr = String(resolvedScoreVal).trim().replace(',', '.');
+              const num = Number(sanitizedScoreStr);
+              if (!isNaN(num)) {
+                parsedScore = Math.max(0, Math.min(100, Math.round(num * 10) / 10));
+                updatedScoresCount++;
+              }
+            }
+
+            const existingCriteria = updatedGrades[targetIndex].criteriaGrades || {};
+            const newCriteria = { ...existingCriteria };
+
+            manualCriteria.forEach(crit => {
+              const critVal = findKeyVal([new RegExp(`^${crit}\\s*\\(a-d\\)$`, 'i'), new RegExp(`^${crit}$`, 'i'), new RegExp(crit, 'i')]);
+              if (critVal && ['A', 'B', 'C', 'D'].includes(String(critVal).toUpperCase().trim())) {
+                newCriteria[crit] = String(critVal).toUpperCase().trim();
+              }
+            });
+
+            updatedGrades[targetIndex] = {
+              ...updatedGrades[targetIndex],
+              score: parsedScore,
+              notes: notesVal !== undefined && String(notesVal).trim() !== '' ? String(notesVal).trim() : updatedGrades[targetIndex].notes,
+              criteriaGrades: newCriteria
+            };
+          }
+        });
+
+        if (matchedCount > 0) {
+          setManualGrades(updatedGrades);
+          if (!manualTitle && file.name) {
+            const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/^Template_Nilai_/i, '').replace(/_/g, ' ');
+            setManualTitle(cleanName);
+          }
+          toast.success(
+            `Berhasil mencocokkan ${matchedCount} siswa (${updatedScoresCount} siswa terisi nilai dari Excel)! Klik "Simpan Penilaian" untuk menyimpan ke Leger.`,
+            { duration: 5000 }
+          );
+        } else {
+          toast.error(
+            `Tidak ada baris siswa yang cocok dari file Excel "${file.name}". Pastikan file memiliki kolom NIS atau Nama Siswa yang sesuai dengan siswa Kelas ${classes.find(c => c.id === selectedClassForGrades)?.name || selectedClassForGrades}.`,
+            { duration: 6000 }
+          );
+        }
+      } catch (err: any) {
+        console.error('Error importing Excel:', err);
+        toast.error('Gagal membaca file Excel. Pastikan file berformat .xlsx atau .xls yang valid.');
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
+  const handleOpenSubmissionsModal = (assign: AssignmentFolder) => {
+    const targetClass = classes.find(c => c.id === assign.classId || c.name === assign.classId);
+    const classStudents = students.filter(s => matchStudentClass(s, targetClass?.id || assign.classId || ''));
+    const taskSubs = (assignmentSubmissions || []).filter(s => s.assignmentFolderId === assign.id || s.assignmentId === assign.id);
+
+    const titleInLeger = `[Tugas GDrive] ${assign.title}`;
+    const existingAssessment = teacherManualAssessments.find(m => 
+      (m.classId === assign.classId || m.classId === targetClass?.id) && 
+      (m.title === titleInLeger || m.title === assign.title)
+    );
+
+    const initialInput: Record<string, { grade: number; feedback: string }> = {};
+
+    classStudents.forEach(st => {
+      const sub = taskSubs.find(s => s.studentId === st.id || s.studentNis === st.nis);
+      const existingGrade = existingAssessment?.grades?.find(g => g.studentId === st.id || g.studentNis === st.nis);
+
+      let initGrade = 0;
+      let initFeedback = '';
+
+      if (sub && sub.grade !== undefined && sub.grade !== null) {
+        initGrade = Number(sub.grade) || 0;
+        initFeedback = sub.feedback || '';
+      } else if (existingGrade && existingGrade.score !== undefined && existingGrade.score !== null) {
+        initGrade = Number(existingGrade.score) || 0;
+        initFeedback = existingGrade.notes && existingGrade.notes !== 'Belum Mengumpulkan' ? existingGrade.notes : '';
+      }
+
+      initialInput[st.id] = { grade: initGrade, feedback: initFeedback };
+      if (sub) {
+        initialInput[sub.id] = { grade: initGrade, feedback: initFeedback };
+      }
+    });
+
+    setFeedbackGradeInput(initialInput);
+    setSubmissionsFilter('all');
+    setSubmissionsSearch('');
+    setShowMassGradeBox(false);
+    setSelectedSubmissionsAssign(assign);
+  };
+
+  const handleSyncAssignmentToLeger = (assignmentItem: AssignmentFolder, showToast = true) => {
+    const targetClass = classes.find(c => c.id === assignmentItem.classId || c.name === assignmentItem.classId);
+    const classStudents = students
+      .filter(s => matchStudentClass(s, targetClass?.id || assignmentItem.classId || ''))
+      .sort((a, b) => {
+        if (a.noAbsen != null && b.noAbsen != null) return a.noAbsen - b.noAbsen;
+        if (a.noAbsen != null) return -1;
+        if (b.noAbsen != null) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    const taskSubs = (assignmentSubmissions || []).filter(s => s.assignmentFolderId === assignmentItem.id || s.assignmentId === assignmentItem.id);
+
+    let gradedCount = 0;
     const gradesForLeger = classStudents.map(st => {
       const sub = taskSubs.find(s => s.studentId === st.id || s.studentNis === st.nis);
-      const customGradeInput = sub ? feedbackGradeInput[sub.id] : undefined;
-      const finalScore = customGradeInput?.grade !== undefined ? customGradeInput.grade : (sub?.grade ?? 0);
+      const studentInput = feedbackGradeInput[st.id] || (sub ? feedbackGradeInput[sub.id] : undefined);
+
+      let finalScore = 0;
+      let finalNotes = sub ? (sub.notes || 'Tugas GDrive') : 'Belum Mengumpulkan';
+
+      if (studentInput?.grade !== undefined && studentInput.grade !== null && !isNaN(Number(studentInput.grade))) {
+        finalScore = Math.max(0, Math.min(100, Number(studentInput.grade)));
+      } else if (sub?.grade !== undefined && sub.grade !== null && !isNaN(Number(sub.grade))) {
+        finalScore = Math.max(0, Math.min(100, Number(sub.grade)));
+      }
+
+      if (finalScore > 0) {
+        gradedCount++;
+      }
+
+      if (studentInput?.feedback && studentInput.feedback.trim() !== '') {
+        finalNotes = studentInput.feedback.trim();
+      } else if (sub?.feedback && sub.feedback.trim() !== '') {
+        finalNotes = sub.feedback.trim();
+      }
+
+      // Also ensure submission record exists if score > 0
+      if (finalScore > 0) {
+        if (sub && onUpdateAssignmentSubmission) {
+          onUpdateAssignmentSubmission({
+            ...sub,
+            grade: finalScore,
+            feedback: finalNotes,
+            status: 'Dinilai'
+          });
+        } else if (!sub && onSaveAssignmentSubmission) {
+          onSaveAssignmentSubmission({
+            assignmentFolderId: assignmentItem.id,
+            assignmentId: assignmentItem.id,
+            studentId: st.id,
+            studentNis: st.nis,
+            studentName: st.name,
+            classId: assignmentItem.classId || targetClass?.id || '',
+            studentClass: st.className || targetClass?.name || '',
+            submissionType: 'direct_file',
+            notes: finalNotes ? `[Input Nilai Manual] ${finalNotes}` : 'Input nilai manual oleh guru',
+            grade: finalScore,
+            feedback: finalNotes,
+            status: 'Dinilai'
+          });
+        }
+      }
+
       return {
         studentId: st.id,
         studentNis: st.nis,
         studentName: st.name,
-        score: sub ? finalScore : 0,
-        notes: sub ? (customGradeInput?.feedback || sub.feedback || 'Tugas GDrive') : 'Belum Mengumpulkan'
+        score: finalScore,
+        notes: finalNotes
       };
     });
 
@@ -2172,7 +2647,9 @@ export default function TeacherPanel({
         date: assignmentItem.dueDate || new Date().toISOString().split('T')[0],
         grades: gradesForLeger
       });
-      toast.success(`Nilai tugas '${assignmentItem.title}' berhasil disinkronkan ke Leger Nilai!`);
+      if (showToast) {
+        toast.success(`Berhasil menyinkronkan nilai tugas '${assignmentItem.title}' (${gradedCount} siswa bernilai) ke Rekap Nilai (Leger)!`);
+      }
     } else if (onSaveManualAssessment) {
       onSaveManualAssessment({
         title: titleInLeger,
@@ -2183,8 +2660,97 @@ export default function TeacherPanel({
         type: 'Tugas GDrive',
         grades: gradesForLeger
       });
-      toast.success(`Nilai tugas '${assignmentItem.title}' berhasil dikirim ke Leger Nilai!`);
+      if (showToast) {
+        toast.success(`Berhasil mengirim nilai tugas '${assignmentItem.title}' (${gradedCount} siswa bernilai) ke Rekap Nilai (Leger)!`);
+      }
     }
+  };
+
+  const handleSaveIndividualStudentGrade = (
+    assign: AssignmentFolder,
+    st: Student,
+    sub?: AssignmentSubmission
+  ) => {
+    const targetClass = classes.find(c => c.id === assign.classId || c.name === assign.classId);
+    const current = feedbackGradeInput[st.id] || (sub ? feedbackGradeInput[sub.id] : undefined) || {
+      grade: sub?.grade ?? 0,
+      feedback: sub?.feedback || ''
+    };
+
+    const finalGrade = Math.max(0, Math.min(100, Number(current.grade) || 0));
+    const finalFeedback = current.feedback || '';
+
+    if (sub) {
+      if (onUpdateAssignmentSubmission) {
+        onUpdateAssignmentSubmission({
+          ...sub,
+          grade: finalGrade,
+          feedback: finalFeedback,
+          status: 'Dinilai'
+        });
+      }
+    } else if (onSaveAssignmentSubmission) {
+      onSaveAssignmentSubmission({
+        assignmentFolderId: assign.id,
+        assignmentId: assign.id,
+        studentId: st.id,
+        studentNis: st.nis,
+        studentName: st.name,
+        classId: assign.classId || targetClass?.id || '',
+        studentClass: st.className || targetClass?.name || '',
+        submissionType: 'direct_file',
+        notes: finalFeedback ? `[Input Nilai Manual] ${finalFeedback}` : 'Input nilai manual oleh guru',
+        grade: finalGrade,
+        feedback: finalFeedback,
+        status: 'Dinilai'
+      });
+    }
+
+    // Update feedbackGradeInput immediately
+    setFeedbackGradeInput(prev => ({
+      ...prev,
+      [st.id]: { grade: finalGrade, feedback: finalFeedback },
+      ...(sub ? { [sub.id]: { grade: finalGrade, feedback: finalFeedback } } : {})
+    }));
+
+    // Trigger sync to Leger
+    setTimeout(() => {
+      handleSyncAssignmentToLeger(assign, false);
+    }, 150);
+
+    toast.success(`Nilai ${st.name} (${finalGrade}) tersimpan & disinkronkan ke Leger!`);
+  };
+
+  const handleApplyMassGrade = (assign: AssignmentFolder, score: number, target: 'all' | 'ungraded') => {
+    const targetClass = classes.find(c => c.id === assign.classId || c.name === assign.classId);
+    const classStudents = students.filter(s => matchStudentClass(s, targetClass?.id || assign.classId || ''));
+    const taskSubs = (assignmentSubmissions || []).filter(s => s.assignmentFolderId === assign.id || s.assignmentId === assign.id);
+
+    const updated = { ...feedbackGradeInput };
+    let count = 0;
+
+    classStudents.forEach(st => {
+      const sub = taskSubs.find(s => s.studentId === st.id || s.studentNis === st.nis);
+      const curr = updated[st.id] || (sub ? updated[sub.id] : undefined);
+      const currentScore = curr?.grade !== undefined ? curr.grade : (sub?.grade ?? 0);
+
+      if (target === 'all' || (target === 'ungraded' && currentScore === 0)) {
+        updated[st.id] = {
+          grade: score,
+          feedback: curr?.feedback || sub?.feedback || ''
+        };
+        if (sub) {
+          updated[sub.id] = {
+            grade: score,
+            feedback: curr?.feedback || sub?.feedback || ''
+          };
+        }
+        count++;
+      }
+    });
+
+    setFeedbackGradeInput(updated);
+    toast.success(`Berhasil menerapkan nilai ${score} untuk ${count} siswa! Klik 'Kirim / Sync Nilai ke Leger' untuk menyimpan permanen.`);
   };
 
   // Custom exam questions creator (shared between exams and question bank)
@@ -4270,12 +4836,12 @@ export default function TeacherPanel({
                   <table className="w-full text-xs text-left divide-y divide-slate-200">
                     <thead className="bg-slate-100 font-bold text-slate-700">
                       <tr>
-                        <th className="px-4 py-3">Jam Ke-</th>
-                        <th className="px-4 py-3">Kelas & Mapel</th>
-                        <th className="px-4 py-3">Topik Pembelajaran</th>
-                        <th className="px-4 py-3 text-center">Presensi & Siswa Tidak Hadir</th>
-                        <th className="px-4 py-3">Catatan / Kendala</th>
-                        <th className="px-4 py-3 text-right">Aksi</th>
+                        <th className="px-3 py-3 w-24 text-center whitespace-nowrap">Jam Ke-</th>
+                        <th className="px-3 py-3 w-32">Kelas & Mapel</th>
+                        <th className="px-4 py-3 min-w-[220px]">Topik Pembelajaran</th>
+                        <th className="px-3 py-3 w-44 text-center">Presensi & Siswa Tidak Hadir</th>
+                        <th className="px-3 py-3 w-28">Catatan / Kendala</th>
+                        <th className="px-3 py-3 w-16 text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
@@ -4418,12 +4984,12 @@ export default function TeacherPanel({
                   <table className="w-full text-xs text-left divide-y divide-slate-200">
                     <thead className="bg-slate-100 font-bold text-slate-700">
                       <tr>
-                        <th className="px-4 py-3">Hari & Tanggal</th>
-                        <th className="px-4 py-3">Jam Ke-</th>
-                        <th className="px-4 py-3">Kelas & Mapel</th>
-                        <th className="px-4 py-3">Topik Pembelajaran</th>
-                        <th className="px-4 py-3 text-center">Presensi & Siswa Tidak Hadir</th>
-                        <th className="px-4 py-3 text-right">Aksi</th>
+                        <th className="px-3 py-3 w-28 whitespace-nowrap">Hari & Tanggal</th>
+                        <th className="px-3 py-3 w-24 text-center whitespace-nowrap">Jam Ke-</th>
+                        <th className="px-3 py-3 w-32">Kelas & Mapel</th>
+                        <th className="px-4 py-3 min-w-[220px]">Topik Pembelajaran</th>
+                        <th className="px-3 py-3 w-44 text-center">Presensi & Siswa Tidak Hadir</th>
+                        <th className="px-3 py-3 w-16 text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
@@ -4569,13 +5135,13 @@ export default function TeacherPanel({
                   <table className="w-full text-xs text-left divide-y divide-slate-200">
                     <thead className="bg-slate-100 font-bold text-slate-700">
                       <tr>
-                        <th className="px-4 py-3">Tanggal</th>
-                        <th className="px-4 py-3">Jam Ke-</th>
-                        <th className="px-4 py-3">Kelas & Mapel</th>
-                        <th className="px-4 py-3">Topik & Capaian Pembelajaran</th>
-                        <th className="px-4 py-3 text-center">Presensi & Siswa Tidak Hadir</th>
-                        <th className="px-4 py-3">Catatan</th>
-                        <th className="px-4 py-3 text-right">Aksi</th>
+                        <th className="px-3 py-3 w-24 whitespace-nowrap">Tanggal</th>
+                        <th className="px-3 py-3 w-24 text-center whitespace-nowrap">Jam Ke-</th>
+                        <th className="px-3 py-3 w-32">Kelas & Mapel</th>
+                        <th className="px-4 py-3 min-w-[220px]">Topik & Capaian Pembelajaran</th>
+                        <th className="px-3 py-3 w-44 text-center">Presensi & Siswa Tidak Hadir</th>
+                        <th className="px-3 py-3 w-28">Catatan</th>
+                        <th className="px-3 py-3 w-16 text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
@@ -5470,6 +6036,18 @@ export default function TeacherPanel({
                     >
                       <Plus className="w-4 h-4" /> Input Nilai Manual
                     </button>
+                    <button
+                      onClick={() => {
+                        handleOpenManualForm();
+                        setTimeout(() => {
+                          excelManualImportRef.current?.click();
+                        }, 120);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Import Nilai Siswa via File Excel (.xlsx / .xls)"
+                    >
+                      <Upload className="w-4 h-4" /> Import Nilai Excel
+                    </button>
                   </>
                 ) : (selectedExamForGrades || selectedManualAssessment) ? (
                   <div className="flex gap-2">
@@ -6000,13 +6578,40 @@ export default function TeacherPanel({
                   <>
                 {showManualAssessmentForm ? (
                   <div className="space-y-4 bg-white p-5 rounded-2xl border border-slate-200">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <h4 className="font-bold text-slate-800">{editingManualAssessment ? 'Edit Penilaian Manual' : 'Input Nilai Manual'}</h4>
-                      <button onClick={() => setShowManualAssessmentForm(false)} className="text-slate-400 hover:text-slate-600">
-                        <X className="w-5 h-5" />
-                      </button>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-extrabold text-slate-800 text-base">{editingManualAssessment ? 'Edit Penilaian Manual' : 'Input Nilai Manual'}</h4>
+                        <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                          Kelas {classes.find(c => c.id === selectedClassForGrades)?.name || selectedClassForGrades}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={handleDownloadManualGradeTemplate}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                          title="Unduh format template Excel untuk kelas ini"
+                        >
+                          <Download className="w-3.5 h-3.5 text-emerald-600" /> Unduh Template
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => excelManualImportRef.current?.click()}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                          title="Import Nilai Siswa via File Excel"
+                        >
+                          <Upload className="w-3.5 h-3.5" /> Import Excel
+                        </button>
+                        <button 
+                          onClick={() => setShowManualAssessmentForm(false)} 
+                          className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer ml-1"
+                          title="Tutup Form"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1">Mata Pelajaran</label>
                         <select
@@ -6020,17 +6625,38 @@ export default function TeacherPanel({
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1">Jenis Penilaian</label>
                         <select
-                          value={manualType}
-                          onChange={(e) => setManualType(e.target.value)}
+                          value={isCustomManualType ? '__CUSTOM__' : manualType}
+                          onChange={(e) => {
+                            if (e.target.value === '__CUSTOM__') {
+                              setIsCustomManualType(true);
+                            } else {
+                              setIsCustomManualType(false);
+                              setManualType(e.target.value);
+                            }
+                          }}
                           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
                         >
                           <option value="Praktikum">Praktikum</option>
                           <option value="Tugas Kelompok">Tugas Kelompok</option>
                           <option value="Presentasi">Presentasi</option>
-                          <option value="Sikap / Perilaku">Sikap / Perilaku</option>
                           <option value="Proyek">Proyek</option>
-                          <option value="Lainnya">Lainnya</option>
+                          <option value="__CUSTOM__">✍️ Ketik Manual (Kustom)...</option>
                         </select>
+                        {isCustomManualType && (
+                          <div className="mt-2 animate-in fade-in duration-200">
+                            <input
+                              type="text"
+                              value={customManualTypeInput}
+                              onChange={(e) => setCustomManualTypeInput(e.target.value)}
+                              placeholder="Ketik jenis penilaian yang diinginkan..."
+                              className="w-full border border-indigo-300 bg-indigo-50/50 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition"
+                              autoFocus
+                            />
+                            <p className="text-[10px] text-slate-500 mt-1">
+                              Misal: Portofolio, Unjuk Kerja, Tes Lisan, dsb.
+                            </p>
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1">Judul / Keterangan</label>
@@ -6106,7 +6732,62 @@ export default function TeacherPanel({
                       </div>
                     </div>
                     
-                    <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden">
+                    {/* Banner Import & Unduh Template Excel */}
+                    <div className="mt-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50/70 border border-emerald-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
+                      <div className="flex items-start sm:items-center gap-3">
+                        <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-xs shrink-0">
+                          <FileSpreadsheet className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h5 className="font-extrabold text-slate-900 text-xs sm:text-sm">Import Nilai Siswa via File Excel (.xlsx / .xls)</h5>
+                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                              Tersinkron dengan Rekap Nilai (Leger)
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                            Unduh template Excel kelas ini, isi nilai siswa, lalu import kembali. Nilai akan otomatis terisi ke tabel dan langsung tersinkronisasi ke Rekap Nilai (Leger) saat disimpan.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleDownloadManualGradeTemplate}
+                          className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                          title="Unduh format template Excel untuk kelas ini"
+                        >
+                          <Download className="w-4 h-4 text-emerald-600" /> Unduh Template Excel
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => excelManualImportRef.current?.click()}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                          title="Unggah file Excel nilai siswa"
+                        >
+                          <Upload className="w-4 h-4" /> Import File Excel
+                        </button>
+                        <input
+                          type="file"
+                          ref={excelManualImportRef}
+                          accept=".xlsx, .xls"
+                          className="hidden"
+                          onChange={handleImportManualGradesExcel}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Status Nilai Siswa */}
+                    <div className="flex items-center justify-between text-xs text-slate-600 font-semibold px-1 pt-1">
+                      <span>Tabel Nilai Siswa ({manualGrades.length} Siswa Terdaftar):</span>
+                      <span className="text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                        {manualGrades.filter(g => g.score > 0).length} dari {manualGrades.length} Siswa Sudah Terisi Nilai
+                      </span>
+                    </div>
+                    
+                    <div className="mt-2 border border-slate-200 rounded-xl overflow-hidden">
                       <table className="w-full text-left text-sm whitespace-nowrap">
                         <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase">
                           <tr>
@@ -6416,12 +7097,26 @@ export default function TeacherPanel({
                       >
                         ← Kembali ke Daftar Kelas
                       </button>
-                      <button
-                        onClick={() => handleOpenManualForm()}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-                      >
-                        <Plus className="w-4 h-4" /> Input Nilai Manual
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleOpenManualForm()}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" /> Input Nilai Manual
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleOpenManualForm();
+                            setTimeout(() => {
+                              excelManualImportRef.current?.click();
+                            }, 120);
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                          title="Import Nilai Siswa via File Excel"
+                        >
+                          <Upload className="w-3.5 h-3.5" /> Import Nilai Excel
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-4">
@@ -6575,7 +7270,7 @@ export default function TeacherPanel({
                                     </span>
                                     <button
                                       type="button"
-                                      onClick={() => setSelectedSubmissionsAssign(task)}
+                                      onClick={() => handleOpenSubmissionsModal(task)}
                                       className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
                                     >
                                       Lihat / Input Nilai <FileText className="w-3.5 h-3.5" />
@@ -8234,7 +8929,7 @@ export default function TeacherPanel({
                         )}
 
                         <button
-                          onClick={() => setSelectedSubmissionsAssign(item)}
+                          onClick={() => handleOpenSubmissionsModal(item)}
                           className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
                         >
                           <Eye className="w-4 h-4" /> Lihat Pengumpulan Siswa ({subCount} Dikumpulkan)
@@ -10398,14 +11093,14 @@ export default function TeacherPanel({
                   <table className="w-full border-collapse border border-slate-400 text-xs text-left">
                     <thead>
                       <tr className="bg-slate-200 text-slate-900 uppercase font-extrabold text-[11px] tracking-wider divide-x divide-slate-400">
-                        <th className="border border-slate-400 p-2 text-center w-10">No</th>
-                        <th className="border border-slate-400 p-2 w-28">Hari & Tanggal</th>
-                        <th className="border border-slate-400 p-2 text-center w-20">Jam Ke</th>
-                        <th className="border border-slate-400 p-2 w-36">Kelas & Mapel</th>
-                        <th className="border border-slate-400 p-2">Topik & Capaian Pembelajaran</th>
-                        <th className="border border-slate-400 p-2 text-center w-28">Presensi</th>
-                        <th className="border border-slate-400 p-2 w-48">Siswa Tidak Hadir</th>
-                        <th className="border border-slate-400 p-2 w-36">Catatan KBM</th>
+                        <th className="border border-slate-400 p-2 text-center w-8 shrink-0">No</th>
+                        <th className="border border-slate-400 p-2 w-24 text-center whitespace-nowrap">Hari & Tanggal</th>
+                        <th className="border border-slate-400 p-2 text-center w-16 whitespace-nowrap">Jam Ke</th>
+                        <th className="border border-slate-400 p-2 w-28">Kelas & Mapel</th>
+                        <th className="border border-slate-400 p-2 min-w-[240px]">Topik & Capaian Pembelajaran</th>
+                        <th className="border border-slate-400 p-2 text-center w-24 whitespace-nowrap">Presensi</th>
+                        <th className="border border-slate-400 p-2 w-36">Siswa Tidak Hadir</th>
+                        <th className="border border-slate-400 p-2 w-28">Catatan KBM</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-300">
@@ -10420,20 +11115,20 @@ export default function TeacherPanel({
                         return (
                           <tr key={idx} className="hover:bg-slate-50/80 divide-x divide-slate-300 align-top">
                             <td className="border border-slate-300 p-2 text-center font-bold">{idx + 1}</td>
-                            <td className="border border-slate-300 p-2 whitespace-nowrap">
+                            <td className="border border-slate-300 p-2 whitespace-nowrap text-center">
                               <span className="font-extrabold text-indigo-900 block">{hari}</span>
                               <span className="text-[11px] text-slate-600">{formatDateToDDMMYYYY(j.date)}</span>
                             </td>
-                            <td className="border border-slate-300 p-2 text-center font-bold text-purple-900">{jamStr}</td>
-                            <td className="border border-slate-300 p-2">
+                            <td className="border border-slate-300 p-2 text-center font-bold text-purple-900 whitespace-nowrap text-[11px]">{jamStr}</td>
+                            <td className="border border-slate-300 p-2 leading-tight">
                               <span className="font-extrabold text-slate-900 block">{cls}</span>
                               <span className="text-[11px] text-slate-600">{subj}</span>
                             </td>
                             <td className="border border-slate-300 p-2">
-                              <span className="font-bold text-slate-900 block">{j.topic}</span>
-                              {j.learningObjectives && <span className="text-[10px] text-slate-500 block mt-0.5">TP: {j.learningObjectives}</span>}
+                              <span className="font-bold text-slate-900 block leading-snug">{j.topic}</span>
+                              {j.learningObjectives && <span className="text-[11px] text-slate-600 block mt-1 bg-slate-50 p-1.5 rounded border border-slate-200 leading-relaxed">TP: {j.learningObjectives}</span>}
                             </td>
-                            <td className="border border-slate-300 p-2 text-center font-mono font-extrabold text-[11px]">
+                            <td className="border border-slate-300 p-2 text-center font-mono font-extrabold text-[11px] whitespace-nowrap">
                               <span className="text-emerald-700">{hadir}H</span> / <span className="text-blue-600">{sakitNames.length}S</span> / <span className="text-amber-600">{izinNames.length}I</span> / <span className="text-red-600">{alpaNames.length}A</span>
                             </td>
                             <td className="border border-slate-300 p-2 text-[11px]">
@@ -10447,7 +11142,7 @@ export default function TeacherPanel({
                                 </div>
                               )}
                             </td>
-                            <td className="border border-slate-300 p-2 text-[11px] text-slate-700">
+                            <td className="border border-slate-300 p-2 text-[11px] text-slate-700 leading-tight">
                               {j.notes || '-'}
                             </td>
                           </tr>
@@ -11322,189 +12017,496 @@ export default function TeacherPanel({
         const taskSubs = (assignmentSubmissions || []).filter(s => s.assignmentFolderId === selectedSubmissionsAssign.id);
 
         return (
-          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-4xl p-6 space-y-5 max-h-[90vh] flex flex-col">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4 shrink-0">
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 z-50 animate-fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-5xl p-5 sm:p-6 space-y-4 max-h-[92vh] flex flex-col">
+              {/* Header Modal */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4 shrink-0">
                 <div>
-                  <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full">
-                    {targetClass?.name || 'Seluruh Kelas'}
-                  </span>
-                  <h3 className="font-extrabold text-slate-900 text-lg mt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
+                      {targetClass?.name || 'Seluruh Kelas'}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      Pusat Tugas & Pengumpulan Berkas
+                    </span>
+                  </div>
+                  <h3 className="font-extrabold text-slate-900 text-lg sm:text-xl mt-1">
                     Rekapitulasi Pengumpulan: {selectedSubmissionsAssign.title}
                   </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Total Siswa: {classStudents.length} • Dikumpulkan: {taskSubs.length} Siswa
-                  </p>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1">
+                    <span>Total Siswa: <strong className="text-slate-800">{classStudents.length}</strong></span>
+                    <span>•</span>
+                    <span>Dikumpulkan Online: <strong className="text-emerald-700">{taskSubs.length} Siswa</strong></span>
+                    <span>•</span>
+                    <span>Sudah Dinilai: <strong className="text-indigo-700">{classStudents.filter(st => {
+                      const sub = taskSubs.find(s => s.studentId === st.id || s.studentNis === st.nis);
+                      const input = feedbackGradeInput[st.id] || (sub ? feedbackGradeInput[sub.id] : undefined);
+                      const sc = input?.grade !== undefined ? input.grade : (sub?.grade ?? 0);
+                      return sc > 0;
+                    }).length} Siswa</strong></span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+
+                <div className="flex items-center gap-2 self-end sm:self-auto">
                   <button
                     type="button"
                     onClick={() => handleSyncAssignmentToLeger(selectedSubmissionsAssign)}
-                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-                    title="Kirim & Sinkronkan seluruh nilai tugas ini ke Leger Nilai"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer"
+                    title="Kirim dan sinkronkan seluruh nilai siswa ke Rekap Nilai (Leger)"
                   >
                     <Save className="w-4 h-4 text-indigo-200" /> Kirim / Sync Nilai ke Leger
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSelectedSubmissionsAssign(null)}
-                    className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 cursor-pointer"
+                    className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                    title="Tutup Modal"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
               </div>
 
-              <div className="overflow-y-auto space-y-3 flex-1 pr-1">
-                {classStudents.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-8">Tidak ada data siswa terdaftar di kelas ini.</p>
-                ) : (
-                  classStudents.map(st => {
-                    const sub = taskSubs.find(s => s.studentId === st.id);
-                    const currentGrade = feedbackGradeInput[sub?.id || ''] || { grade: sub?.grade || 100, feedback: sub?.feedback || '' };
+              {/* Toolbar: Filter, Search, and Quick Mass Grade */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200 shrink-0">
+                {/* Search Bar */}
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Cari nama atau NIS siswa..."
+                    value={submissionsSearch}
+                    onChange={(e) => setSubmissionsSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  />
+                  {submissionsSearch && (
+                    <button
+                      onClick={() => setSubmissionsSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter Pills */}
+                <div className="flex flex-wrap items-center gap-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSubmissionsFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition text-[11px] cursor-pointer ${
+                      submissionsFilter === 'all'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    Semua ({classStudents.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubmissionsFilter('graded')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition text-[11px] cursor-pointer ${
+                      submissionsFilter === 'graded'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-200'
+                    }`}
+                  >
+                    Sudah Dinilai ({classStudents.filter(st => {
+                      const sub = taskSubs.find(s => s.studentId === st.id || s.studentNis === st.nis);
+                      const input = feedbackGradeInput[st.id] || (sub ? feedbackGradeInput[sub.id] : undefined);
+                      const sc = input?.grade !== undefined ? input.grade : (sub?.grade ?? 0);
+                      return sc > 0;
+                    }).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubmissionsFilter('ungraded')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition text-[11px] cursor-pointer ${
+                      submissionsFilter === 'ungraded'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-white text-amber-700 hover:bg-amber-50 border border-amber-200'
+                    }`}
+                  >
+                    Belum Dinilai ({classStudents.filter(st => {
+                      const sub = taskSubs.find(s => s.studentId === st.id || s.studentNis === st.nis);
+                      const input = feedbackGradeInput[st.id] || (sub ? feedbackGradeInput[sub.id] : undefined);
+                      const sc = input?.grade !== undefined ? input.grade : (sub?.grade ?? 0);
+                      return sc === 0;
+                    }).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubmissionsFilter('submitted')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition text-[11px] cursor-pointer ${
+                      submissionsFilter === 'submitted'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-white text-blue-700 hover:bg-blue-50 border border-blue-200'
+                    }`}
+                  >
+                    Dikumpulkan ({taskSubs.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubmissionsFilter('unsubmitted')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition text-[11px] cursor-pointer ${
+                      submissionsFilter === 'unsubmitted'
+                        ? 'bg-slate-700 text-white shadow-xs'
+                        : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    Belum Kumpul ({classStudents.length - taskSubs.length})
+                  </button>
+                </div>
+
+                {/* Mass Grade Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setShowMassGradeBox(!showMassGradeBox)}
+                  className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                    showMassGradeBox
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-white hover:bg-amber-50 text-amber-800 border border-amber-200'
+                  }`}
+                  title="Isi nilai default serentak untuk seluruh siswa"
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Isi Nilai Cepat</span>
+                </button>
+              </div>
+
+              {/* Mass Grading Banner */}
+              {showMassGradeBox && (
+                <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs animate-fade-in shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-amber-900">Isi Nilai Masal:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={massGradeVal}
+                      onChange={(e) => setMassGradeVal(Math.max(0, Math.min(100, Number(e.target.value))))}
+                      className="w-16 px-2 py-1 bg-white border border-amber-300 rounded-lg text-center font-black text-amber-950"
+                    />
+                    <div className="flex items-center gap-1">
+                      {[75, 80, 85, 90, 100].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setMassGradeVal(val)}
+                          className="px-1.5 py-0.5 bg-white hover:bg-amber-100 text-amber-800 font-bold text-[10px] rounded border border-amber-200 cursor-pointer"
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleApplyMassGrade(selectedSubmissionsAssign, massGradeVal, 'ungraded')}
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shadow-2xs transition cursor-pointer"
+                    >
+                      Terapkan ke yang Belum Dinilai
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyMassGrade(selectedSubmissionsAssign, massGradeVal, 'all')}
+                      className="px-3 py-1 bg-amber-800 hover:bg-amber-900 text-white font-bold rounded-lg shadow-2xs transition cursor-pointer"
+                    >
+                      Terapkan ke Semua Siswa
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowMassGradeBox(false)}
+                      className="p-1 text-amber-700 hover:text-amber-900"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Student Cards List */}
+              <div className="overflow-y-auto space-y-3.5 flex-1 pr-1">
+                {(() => {
+                  const filteredStudents = classStudents.filter(st => {
+                    const sub = taskSubs.find(s => s.studentId === st.id || s.studentNis === st.nis);
+                    const input = feedbackGradeInput[st.id] || (sub ? feedbackGradeInput[sub.id] : undefined);
+                    const sc = input?.grade !== undefined ? input.grade : (sub?.grade ?? 0);
+                    const isSubmitted = !!sub;
+                    const isGraded = sc > 0;
+
+                    if (submissionsFilter === 'submitted' && !isSubmitted) return false;
+                    if (submissionsFilter === 'unsubmitted' && isSubmitted) return false;
+                    if (submissionsFilter === 'graded' && !isGraded) return false;
+                    if (submissionsFilter === 'ungraded' && isGraded) return false;
+
+                    if (submissionsSearch.trim()) {
+                      const q = submissionsSearch.toLowerCase().trim();
+                      const matchName = st.name.toLowerCase().includes(q);
+                      const matchNis = (st.nis || '').toLowerCase().includes(q);
+                      if (!matchName && !matchNis) return false;
+                    }
+
+                    return true;
+                  });
+
+                  if (filteredStudents.length === 0) {
+                    return (
+                      <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="text-sm font-bold text-slate-600">Tidak ada siswa yang sesuai dengan filter/pencarian.</p>
+                        <button
+                          type="button"
+                          onClick={() => { setSubmissionsFilter('all'); setSubmissionsSearch(''); }}
+                          className="mt-2 text-xs text-indigo-600 hover:text-indigo-800 font-bold"
+                        >
+                          Reset Filter
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return filteredStudents.map((st, idx) => {
+                    const sub = taskSubs.find(s => s.studentId === st.id || s.studentNis === st.nis);
+                    const currentGrade = feedbackGradeInput[st.id] || (sub ? feedbackGradeInput[sub.id] : undefined) || {
+                      grade: sub?.grade ?? 0,
+                      feedback: sub?.feedback || ''
+                    };
+                    const isGraded = currentGrade.grade > 0;
 
                     return (
                       <div
                         key={st.id}
                         className={`p-4 rounded-2xl border transition-all ${
-                          sub ? 'bg-emerald-50/40 border-emerald-200' : 'bg-slate-50/60 border-slate-200'
+                          isGraded
+                            ? 'bg-emerald-50/30 border-emerald-200 shadow-2xs'
+                            : sub
+                            ? 'bg-blue-50/20 border-blue-200'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
                         }`}
                       >
+                        {/* Student Info & Submission Status Header */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
                             <div className={`w-10 h-10 rounded-xl font-black text-sm flex items-center justify-center shrink-0 ${
-                              sub ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'
+                              isGraded
+                                ? 'bg-emerald-600 text-white shadow-2xs'
+                                : sub
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-200 text-slate-600'
                             }`}>
                               {st.name.substring(0, 2).toUpperCase()}
                             </div>
                             <div>
-                              <h4 className="font-extrabold text-slate-900 text-sm">{st.name}</h4>
-                              <p className="text-[11px] text-slate-500">NIS: {st.nis} • Kelas: {st.className || targetClass?.name || '-'}</p>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-extrabold text-slate-900 text-sm">{st.name}</h4>
+                                {st.noAbsen != null && (
+                                  <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
+                                    No. {st.noAbsen}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-500">
+                                NIS: {st.nis} • Kelas: {st.className || targetClass?.name || '-'}
+                              </p>
                             </div>
                           </div>
 
-                          <div>
+                          <div className="flex items-center gap-2 self-start sm:self-auto">
+                            {/* Grade Status Pill */}
+                            {isGraded ? (
+                              <span className={`px-2.5 py-1 text-xs font-black rounded-lg flex items-center gap-1 ${
+                                currentGrade.grade >= 75
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  : 'bg-amber-100 text-amber-800 border border-amber-300'
+                              }`}>
+                                ⭐ Nilai: {currentGrade.grade}
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 bg-slate-100 text-slate-500 text-xs font-bold rounded-lg border border-slate-200">
+                                Belum Dinilai
+                              </span>
+                            )}
+
+                            {/* Online Submission Status Pill */}
                             {sub ? (
-                              <span className="px-3 py-1 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center gap-1">
+                              <span className="px-3 py-1 bg-emerald-600 text-white text-xs font-black rounded-full flex items-center gap-1 shadow-2xs">
                                 <CheckCircle className="w-3.5 h-3.5" /> Dikumpulkan ({new Date(sub.submittedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })})
                               </span>
                             ) : (
-                              <span className="px-3 py-1 bg-slate-200 text-slate-600 text-xs font-extrabold rounded-full">
+                              <span className="px-3 py-1 bg-slate-100 text-slate-600 border border-slate-200 text-xs font-extrabold rounded-full flex items-center gap-1">
                                 ⏳ Belum Mengumpulkan
                               </span>
                             )}
                           </div>
                         </div>
 
+                        {/* File Details (If student submitted file or link) */}
                         {sub && (
-                          <div className="mt-3 pt-3 border-t border-emerald-100/80 space-y-3">
-                            <div className="flex flex-wrap items-center gap-3">
-                              {sub.submissionType === 'direct_file' ? (
-                                <div className="flex items-center gap-2 bg-emerald-100/80 border border-emerald-300 text-emerald-900 px-3 py-1.5 rounded-xl text-xs font-bold">
-                                  <span className="px-2 py-0.5 bg-emerald-700 text-white font-black text-[10px] rounded-md uppercase">
-                                    {sub.fileType || 'FILE'}
-                                  </span>
-                                  <span className="truncate max-w-[200px]">{sub.fileName || 'Berkas Tugas'}</span>
-                                  {sub.fileSize && <span className="text-[10px] text-emerald-700">({sub.fileSize})</span>}
-                                  <a
-                                    href={sub.fileUrl}
-                                    download={sub.fileName || 'Tugas_Siswa'}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="ml-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg transition flex items-center gap-1 text-[11px]"
-                                  >
-                                    <Download className="w-3.5 h-3.5" /> Unduh / Buka File
-                                  </a>
-                                </div>
-                              ) : (
-                                sub.fileUrl && (() => {
-                                  const driveInfo = analyzeDriveUrl(sub.fileUrl);
-                                  return (
-                                    <div className="flex items-center gap-2">
-                                      <span className={`px-2.5 py-1 rounded-xl text-xs font-extrabold border ${driveInfo.colorClass}`}>
-                                        {driveInfo.label}
-                                      </span>
-                                      <a
-                                        href={sub.fileUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-                                      >
-                                        <ExternalLink className="w-3.5 h-3.5" /> Buka Link Berkas Siswa
-                                      </a>
-                                    </div>
-                                  );
-                                })()
-                              )}
-
-                              {sub.notes && (
-                                <p className="text-xs text-slate-600 italic bg-white p-2 rounded-xl border border-slate-200 flex-1">
-                                  "Catatan Siswa: {sub.notes}"
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Nilai & Feedback Form */}
-                            <div className="bg-white p-3 rounded-2xl border border-emerald-200 flex flex-col sm:flex-row items-end sm:items-center gap-3">
-                              <div className="w-24">
-                                <label className="block text-[10px] font-black text-slate-500 uppercase">Nilai (0-100)</label>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  max={100}
-                                  value={currentGrade.grade}
-                                  onChange={(e) => {
-                                    setFeedbackGradeInput({
-                                      ...feedbackGradeInput,
-                                      [sub.id]: { ...currentGrade, grade: Number(e.target.value) }
-                                    });
-                                  }}
-                                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-900"
-                                />
+                          <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-2.5 text-xs">
+                            {sub.submissionType === 'direct_file' ? (
+                              <div className="flex items-center gap-2 bg-emerald-100/70 border border-emerald-300 text-emerald-900 px-3 py-1 rounded-xl font-bold">
+                                <span className="px-2 py-0.5 bg-emerald-700 text-white font-black text-[10px] rounded-md uppercase">
+                                  {sub.fileType || 'FILE'}
+                                </span>
+                                <span className="truncate max-w-[220px]">{sub.fileName || 'Berkas Tugas'}</span>
+                                {sub.fileSize && <span className="text-[10px] text-emerald-700 font-normal">({sub.fileSize})</span>}
+                                <a
+                                  href={sub.fileUrl}
+                                  download={sub.fileName || 'Tugas_Siswa'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="ml-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg transition flex items-center gap-1 text-[11px]"
+                                >
+                                  <Download className="w-3.5 h-3.5" /> Unduh Berkas
+                                </a>
                               </div>
+                            ) : (
+                              sub.fileUrl && (() => {
+                                const driveInfo = analyzeDriveUrl(sub.fileUrl);
+                                return (
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-2.5 py-1 rounded-xl text-xs font-extrabold border ${driveInfo.colorClass}`}>
+                                      {driveInfo.label}
+                                    </span>
+                                    <a
+                                      href={sub.fileUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5" /> Buka Link GDrive Siswa
+                                    </a>
+                                  </div>
+                                );
+                              })()
+                            )}
 
-                              <div className="flex-1 w-full">
-                                <label className="block text-[10px] font-black text-slate-500 uppercase">Feedback / Catatan Evaluasi Guru</label>
-                                <input
-                                  type="text"
-                                  placeholder="Contoh: Kerja bagus! Hasil analisis praktikum sangat detail."
-                                  value={currentGrade.feedback}
-                                  onChange={(e) => {
-                                    setFeedbackGradeInput({
-                                      ...feedbackGradeInput,
-                                      [sub.id]: { ...currentGrade, feedback: e.target.value }
-                                    });
-                                  }}
-                                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-800"
-                                />
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (onUpdateAssignmentSubmission) {
-                                    onUpdateAssignmentSubmission({
-                                      ...sub,
-                                      grade: currentGrade.grade,
-                                      feedback: currentGrade.feedback,
-                                      status: 'Dinilai'
-                                    });
-                                    toast.success(`Nilai untuk ${st.name} berhasil disimpan!`);
-                                    setTimeout(() => {
-                                      handleSyncAssignmentToLeger(selectedSubmissionsAssign);
-                                    }, 100);
-                                  }
-                                }}
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-2xs transition shrink-0 cursor-pointer"
-                              >
-                                Simpan Nilai
-                              </button>
-                            </div>
+                            {sub.notes && (
+                              <p className="text-xs text-slate-600 italic bg-white px-2.5 py-1 rounded-xl border border-slate-200">
+                                💬 Catatan Siswa: "{sub.notes}"
+                              </p>
+                            )}
                           </div>
                         )}
+
+                        {/* KOLOM INPUT NILAI MANUAL & SINKRONISASI LEGER (Tampil untuk SEMUA siswa, baik yang sudah kumpul atau belum kumpul) */}
+                        <div className="mt-3 pt-3 border-t border-slate-200/90 bg-slate-50/80 -mx-4 -mb-4 p-4 rounded-b-2xl flex flex-col md:flex-row md:items-end gap-3">
+                          {/* Input Nilai Angka */}
+                          <div className="w-full md:w-36 shrink-0">
+                            <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1 flex items-center justify-between">
+                              <span>Nilai (0-100)</span>
+                              {currentGrade.grade > 0 && (
+                                <span className={`text-[10px] font-extrabold px-1.5 rounded ${
+                                  currentGrade.grade >= 75 ? 'text-emerald-700' : 'text-amber-700'
+                                }`}>
+                                  {currentGrade.grade >= 75 ? 'Tuntas' : 'Remedial'}
+                                </span>
+                              )}
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              placeholder="0"
+                              value={currentGrade.grade === 0 ? '' : currentGrade.grade}
+                              onChange={(e) => {
+                                const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                const clamped = Math.max(0, Math.min(100, val));
+                                setFeedbackGradeInput(prev => ({
+                                  ...prev,
+                                  [st.id]: { grade: clamped, feedback: currentGrade.feedback },
+                                  ...(sub ? { [sub.id]: { grade: clamped, feedback: currentGrade.feedback } } : {})
+                                }));
+                              }}
+                              className="w-full px-3 py-2 bg-white border border-slate-300 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 rounded-xl text-sm font-black text-slate-900 transition text-center shadow-2xs"
+                            />
+                            {/* Preset buttons */}
+                            <div className="flex items-center justify-center gap-1 mt-1.5">
+                              {[75, 80, 85, 90, 100].map(pScore => (
+                                <button
+                                  key={pScore}
+                                  type="button"
+                                  onClick={() => {
+                                    setFeedbackGradeInput(prev => ({
+                                      ...prev,
+                                      [st.id]: { grade: pScore, feedback: currentGrade.feedback },
+                                      ...(sub ? { [sub.id]: { grade: pScore, feedback: currentGrade.feedback } } : {})
+                                    }));
+                                  }}
+                                  className={`px-1 py-0.5 text-[10px] font-bold rounded border transition cursor-pointer ${
+                                    currentGrade.grade === pScore
+                                      ? 'bg-indigo-600 text-white border-indigo-600'
+                                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200'
+                                  }`}
+                                >
+                                  {pScore}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Input Feedback / Catatan */}
+                          <div className="flex-1 w-full">
+                            <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">
+                              Feedback / Catatan Evaluasi Guru
+                            </label>
+                            <input
+                              type="text"
+                              placeholder={sub ? "Contoh: Analisis sangat bagus & rapi." : "Contoh: Dikumpulkan luring / penilaian tugas manual"}
+                              value={currentGrade.feedback}
+                              onChange={(e) => {
+                                setFeedbackGradeInput(prev => ({
+                                  ...prev,
+                                  [st.id]: { grade: currentGrade.grade, feedback: e.target.value },
+                                  ...(sub ? { [sub.id]: { grade: currentGrade.grade, feedback: e.target.value } } : {})
+                                }));
+                              }}
+                              className="w-full px-3.5 py-2 bg-white border border-slate-300 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 rounded-xl text-xs text-slate-800 transition shadow-2xs"
+                            />
+                          </div>
+
+                          {/* Tombol Simpan Nilai Siswa */}
+                          <button
+                            type="button"
+                            onClick={() => handleSaveIndividualStudentGrade(selectedSubmissionsAssign, st, sub)}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer h-[38px]"
+                            title="Simpan nilai siswa ini dan perbarui ke Leger"
+                          >
+                            <Save className="w-3.5 h-3.5 text-emerald-200" />
+                            <span>Simpan Nilai</span>
+                          </button>
+                        </div>
                       </div>
                     );
-                  })
-                )}
+                  });
+                })()}
+              </div>
+
+              {/* Sticky Bottom Actions Bar */}
+              <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 bg-white">
+                <div className="text-xs text-slate-600">
+                  <span>Nilai yang diinput akan otomatis tersinkronisasi ke <strong>Rekap Nilai (Leger)</strong> kelas.</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSubmissionsAssign(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSyncAssignmentToLeger(selectedSubmissionsAssign)}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4 text-indigo-200" />
+                    <span>Kirim & Simpan Seluruh Nilai ke Leger</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
